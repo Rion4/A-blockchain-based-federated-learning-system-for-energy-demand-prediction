@@ -15,7 +15,7 @@ import random
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 print("Loading dataset...")
-df = pd.read_csv('split_dataset_2.csv', on_bad_lines='skip')
+df = pd.read_csv('household_2_energy_dataset.csv', on_bad_lines='skip')
 
 # === STEP 1: Feature Engineering ===
 print("Adding time-based and lag features...")
@@ -52,8 +52,8 @@ df['roc_24'] = df['Total_Electricity'] - df['lag_24']
 df['is_morning_peak'] = ((df['HourOfDay'] >= 7) & (df['HourOfDay'] <= 9)).astype(int)
 df['is_evening_peak'] = ((df['HourOfDay'] >= 17) & (df['HourOfDay'] <= 19)).astype(int)
 
-# Drop index and unused
-exclude_cols = ['Class', 'theft', '0']
+# Drop index and unused columns including timestamp
+exclude_cols = ['Class', 'theft', '0', 'timestamp', 'transaction_id', 'node_id']
 feature_cols = [col for col in df.columns if col not in exclude_cols and col != 'Electricity:Facility [kW](Hourly)']
 target_col = 'Electricity:Facility [kW](Hourly)'
 
@@ -276,15 +276,17 @@ print(f"sMAPE: {smape_score:.2f}%")
 print("\n============================================================")
 print("         FINAL PREDICTION OUTPUT")
 print("============================================================")
-for i in range(10):
+num_predictions = min(10, len(y_test_true))
+for i in range(num_predictions):
     actual = y_test_true[i]
     pred = y_pred_final[i]
-    error = abs(pred - actual) / actual * 100
+    error = abs(pred - actual) / actual * 100 if actual != 0 else 0
     status = "✅ Success" if error < 5 else "⚠️  Warning"
-    print(f"Direct sum (from data): {actual:.2f} kW")
-    print(f"Reconstructed (y_test_true): {actual:.2f} kW")
-    print(f"Calibrated Predicted: {pred:.2f} kW  ← {error:.1f}% error → {status}")
-    print("Error: 0.00 kW\n")
+    print(f"Prediction {i+1}:")
+    print(f"  Actual: {actual:.2f} kW")
+    print(f"  Predicted: {pred:.2f} kW")
+    print(f"  Error: {error:.1f}% → {status}")
+    print()
 
 # === STEP 10: Save Weights ===
 def save_mlp_weights(model, filename):

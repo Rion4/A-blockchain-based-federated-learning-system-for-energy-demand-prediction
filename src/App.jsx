@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 //import ChatBot from "./chatbot.jsx";
 import ChatBot from "./chatbot";
+import WalletConnect from "./WalletConnect";
+import BillPayment from "./BillPayment";
 // Supabase import is removed and will be loaded from a CDN.
 
 // --- PREDICTION DATA SERVICE ---
@@ -65,9 +67,9 @@ const initialRegionalData = {
     name: "North Mangalore",
     trends: { users: 1850, avgConsumption: 29.1 },
     forecasts: {
-      day: { value: 53.8, unit: "MWh" },
-      week: { value: 376.6, unit: "MWh" },
-      month: { value: 1.6, unit: "GWh" },
+      day: { value: 285.4, unit: "MWh" },
+      week: { value: 1997.8, unit: "MWh" },
+      month: { value: 8.6, unit: "GWh" },
     },
     efficiency: 94,
   },
@@ -75,9 +77,9 @@ const initialRegionalData = {
     name: "North East Mangalore",
     trends: { users: 1450, avgConsumption: 28.5 },
     forecasts: {
-      day: { value: 41.3, unit: "MWh" },
-      week: { value: 289.1, unit: "MWh" },
-      month: { value: 1.2, unit: "GWh" },
+      day: { value: 218.9, unit: "MWh" },
+      week: { value: 1532.3, unit: "MWh" },
+      month: { value: 6.6, unit: "GWh" },
     },
     efficiency: 92,
   },
@@ -85,9 +87,9 @@ const initialRegionalData = {
     name: "East Mangalore",
     trends: { users: 1675, avgConsumption: 30.5 },
     forecasts: {
-      day: { value: 51.1, unit: "MWh" },
-      week: { value: 357.7, unit: "MWh" },
-      month: { value: 1.5, unit: "GWh" },
+      day: { value: 271.2, unit: "MWh" },
+      week: { value: 1898.4, unit: "MWh" },
+      month: { value: 8.1, unit: "GWh" },
     },
     efficiency: 91,
   },
@@ -95,9 +97,9 @@ const initialRegionalData = {
     name: "South East Mangalore",
     trends: { users: 2105, avgConsumption: 31.2 },
     forecasts: {
-      day: { value: 65.7, unit: "MWh" },
-      week: { value: 460.0, unit: "MWh" },
-      month: { value: 1.9, unit: "GWh" },
+      day: { value: 348.6, unit: "MWh" },
+      week: { value: 2440.2, unit: "MWh" },
+      month: { value: 10.5, unit: "GWh" },
     },
     efficiency: 88,
   },
@@ -105,9 +107,9 @@ const initialRegionalData = {
     name: "South Mangalore",
     trends: { users: 1950, avgConsumption: 32.8 },
     forecasts: {
-      day: { value: 64.0, unit: "MWh" },
-      week: { value: 448.0, unit: "MWh" },
-      month: { value: 1.8, unit: "GWh" },
+      day: { value: 339.2, unit: "MWh" },
+      week: { value: 2374.4, unit: "MWh" },
+      month: { value: 10.2, unit: "GWh" },
     },
     efficiency: 89,
   },
@@ -115,80 +117,140 @@ const initialRegionalData = {
     name: "West Mangalore",
     trends: { users: 2350, avgConsumption: 27.8 },
     forecasts: {
-      day: { value: 65.3, unit: "MWh" },
-      week: { value: 457.1, unit: "MWh" },
-      month: { value: 2.0, unit: "GWh" },
+      day: { value: 346.1, unit: "MWh" },
+      week: { value: 2422.7, unit: "MWh" },
+      month: { value: 10.4, unit: "GWh" },
     },
     efficiency: 95,
   },
+};
+
+// Helper function to calculate total Mangalore consumption intelligently
+const calculateTotalMangaloreConsumption = (regionalData, liveData = null) => {
+  // Base calculation from regional data
+  let totalConsumption = Object.values(regionalData).reduce((total, region) => {
+    return total + region.forecasts.day.value;
+  }, 0);
+
+  // If we have live federated data, use it to adjust the total more intelligently
+  if (liveData && liveData.predicted_24h_sum_kw) {
+    // Scale the federated prediction to city-level (multiply by appropriate factor)
+    // Since federated data is typically for smaller areas, scale it up for entire city
+    totalConsumption = (liveData.predicted_24h_sum_kw / 1000) * 500; // Scale factor for city-wide consumption
+  } else {
+    // Add some intelligent variation based on time of day and regional factors
+    const currentHour = new Date().getHours();
+    let timeMultiplier = 1.0;
+
+    // Peak hours adjustment (7-9 AM and 6-9 PM)
+    if (
+      (currentHour >= 7 && currentHour <= 9) ||
+      (currentHour >= 18 && currentHour <= 21)
+    ) {
+      timeMultiplier = 1.25; // 25% increase during peak hours
+    } else if (currentHour >= 22 || currentHour <= 5) {
+      timeMultiplier = 0.7; // 30% decrease during night hours
+    } else if (currentHour >= 10 && currentHour <= 17) {
+      timeMultiplier = 1.1; // 10% increase during business hours
+    }
+
+    totalConsumption *= timeMultiplier;
+
+    // Add seasonal variation (Mangalore climate consideration)
+    const currentMonth = new Date().getMonth();
+    let seasonalMultiplier = 1.0;
+
+    // Summer months (March-May) - higher AC usage
+    if (currentMonth >= 2 && currentMonth <= 4) {
+      seasonalMultiplier = 1.3;
+    }
+    // Monsoon months (June-September) - moderate usage
+    else if (currentMonth >= 5 && currentMonth <= 8) {
+      seasonalMultiplier = 1.1;
+    }
+    // Winter months (December-February) - lower usage
+    else if (currentMonth >= 11 || currentMonth <= 1) {
+      seasonalMultiplier = 0.95;
+    }
+
+    totalConsumption *= seasonalMultiplier;
+  }
+
+  return totalConsumption;
 };
 
 // Regional heatmap data with detailed sub-areas for zoom levels
 const regionalHeatmapData = {
   north_mangaluru: {
     center: [12.9659, 74.8295],
-    baseIntensity: 0.9,
+    baseIntensity: 0.95, // Critical - Industrial area with high consumption
+    consumptionLevel: "critical",
     subAreas: [
-      [12.9659, 74.8295, 0.9], // Surathkal Main
-      [12.972, 74.835, 0.85], // Surathkal Beach
-      [12.96, 74.825, 0.88], // NITK Area
-      [12.968, 74.832, 0.92], // Industrial Zone
-      [12.964, 74.828, 0.87], // Residential Area
+      [12.9659, 74.8295, 0.95], // Surathkal Main - Critical
+      [12.972, 74.835, 0.3], // Surathkal Beach - Economical
+      [12.96, 74.825, 0.88], // NITK Area - High
+      [12.968, 74.832, 0.98], // Industrial Zone - Critical
+      [12.964, 74.828, 0.45], // Residential Area - Moderate
     ],
   },
   north_east_mangaluru: {
     center: [12.935, 74.8455],
-    baseIntensity: 0.75,
+    baseIntensity: 0.6, // Moderate consumption
+    consumptionLevel: "moderate",
     subAreas: [
-      [12.935, 74.8455, 0.75], // Kavoor Main
-      [12.938, 74.848, 0.78], // Kavoor Junction
-      [12.932, 74.843, 0.72], // Residential Kavoor
-      [12.937, 74.847, 0.77], // Commercial Area
-      [12.934, 74.844, 0.74], // Kavoor Extension
+      [12.935, 74.8455, 0.65], // Kavoor Main - Moderate
+      [12.938, 74.848, 0.85], // Kavoor Junction - High
+      [12.932, 74.843, 0.25], // Residential Kavoor - Economical
+      [12.937, 74.847, 0.75], // Commercial Area - High
+      [12.934, 74.844, 0.4], // Kavoor Extension - Moderate
     ],
   },
   east_mangaluru: {
     center: [12.9178, 74.8737],
-    baseIntensity: 0.65,
+    baseIntensity: 0.35, // Economical - Residential area
+    consumptionLevel: "economical",
     subAreas: [
-      [12.9178, 74.8737, 0.65], // Derebail Main
-      [12.92, 74.876, 0.68], // Derebail East
-      [12.915, 74.871, 0.62], // Derebail West
-      [12.919, 74.875, 0.67], // Market Area
-      [12.916, 74.872, 0.64], // Residential Zone
+      [12.9178, 74.8737, 0.35], // Derebail Main - Economical
+      [12.92, 74.876, 0.55], // Derebail East - Moderate
+      [12.915, 74.871, 0.2], // Derebail West - Very Economical
+      [12.919, 74.875, 0.7], // Market Area - High
+      [12.916, 74.872, 0.3], // Residential Zone - Economical
     ],
   },
   south_east_mangaluru: {
     center: [12.87, 74.88],
-    baseIntensity: 0.85,
+    baseIntensity: 0.9, // Critical - Commercial hub
+    consumptionLevel: "critical",
     subAreas: [
-      [12.87, 74.88, 0.85], // Kankanady Main
-      [12.872, 74.882, 0.88], // Kankanady Market
-      [12.868, 74.878, 0.82], // Kankanady Residential
-      [12.871, 74.881, 0.87], // Commercial Hub
-      [12.869, 74.879, 0.84], // Industrial Area
+      [12.87, 74.88, 0.92], // Kankanady Main - Critical
+      [12.872, 74.882, 0.95], // Kankanady Market - Critical
+      [12.868, 74.878, 0.4], // Kankanady Residential - Moderate
+      [12.871, 74.881, 0.88], // Commercial Hub - High
+      [12.869, 74.879, 0.85], // Industrial Area - High
     ],
   },
   south_mangaluru: {
     center: [12.8223, 74.8485],
-    baseIntensity: 0.8,
+    baseIntensity: 0.5, // Moderate - Coastal residential area
+    consumptionLevel: "moderate",
     subAreas: [
-      [12.8223, 74.8485, 0.8], // Ullal Main
-      [12.825, 74.851, 0.83], // Ullal Beach
-      [12.82, 74.846, 0.77], // Ullal Town
-      [12.824, 74.85, 0.82], // Coastal Area
-      [12.821, 74.847, 0.79], // Residential Ullal
+      [12.8223, 74.8485, 0.55], // Ullal Main - Moderate
+      [12.825, 74.851, 0.25], // Ullal Beach - Economical
+      [12.82, 74.846, 0.45], // Ullal Town - Moderate
+      [12.824, 74.85, 0.3], // Coastal Area - Economical
+      [12.821, 74.847, 0.4], // Residential Ullal - Moderate
     ],
   },
   west_mangaluru: {
     center: [12.8797, 74.8433],
-    baseIntensity: 0.95,
+    baseIntensity: 0.92, // Critical - Major commercial district
+    consumptionLevel: "critical",
     subAreas: [
-      [12.8797, 74.8433, 0.95], // Bejai Main
-      [12.882, 74.845, 0.98], // Attavar Junction
-      [12.877, 74.841, 0.92], // Bejai Residential
-      [12.881, 74.844, 0.97], // Commercial District
-      [12.878, 74.842, 0.94], // Bejai Extension
+      [12.8797, 74.8433, 0.92], // Bejai Main - Critical
+      [12.882, 74.845, 0.98], // Attavar Junction - Critical
+      [12.877, 74.841, 0.5], // Bejai Residential - Moderate
+      [12.881, 74.844, 0.95], // Commercial District - Critical
+      [12.878, 74.842, 0.7], // Bejai Extension - High
     ],
   },
 };
@@ -201,9 +263,17 @@ const generateHeatmapData = (regionalData, liveData) => {
     const region = regionalHeatmapData[regionKey];
     const regionInfo = regionalData[regionKey];
 
-    // Calculate base intensity based on prediction data
+    // Use predefined base intensity with slight dynamic variation
     let baseIntensity = region.baseIntensity;
 
+    // Add small time-based variation to make it more dynamic (±10%)
+    const timeVariation = Math.sin(Date.now() / 50000 + regionKey.length) * 0.1;
+    baseIntensity = Math.min(
+      1.0,
+      Math.max(0.05, baseIntensity + timeVariation)
+    );
+
+    // Optional: Use live data if available, but keep within reasonable bounds
     if (liveData && liveData.federated_nodes) {
       const matchingNode = liveData.federated_nodes.find(
         (node) =>
@@ -212,12 +282,11 @@ const generateHeatmapData = (regionalData, liveData) => {
       );
 
       if (matchingNode) {
-        const predictionRatio = matchingNode.local_prediction_kw / 2000;
-        baseIntensity = Math.min(1.0, Math.max(0.1, predictionRatio));
+        const predictionRatio = matchingNode.local_prediction_kw / 1500; // Adjusted for better range
+        const liveIntensity = Math.min(1.0, Math.max(0.1, predictionRatio));
+        // Blend with predefined intensity (70% predefined, 30% live)
+        baseIntensity = baseIntensity * 0.7 + liveIntensity * 0.3;
       }
-    } else if (regionInfo) {
-      const forecastValue = regionInfo.forecasts.day.value;
-      baseIntensity = Math.min(1.0, Math.max(0.1, forecastValue / 70));
     }
 
     // Create multiple data points around the center for smoother heatmap
@@ -228,30 +297,53 @@ const generateHeatmapData = (regionalData, liveData) => {
     // Add center point with full intensity
     baseData.push([center[0], center[1], baseIntensity]);
 
-    // Add surrounding points with slight variations
+    // Add surrounding points with consumption-level appropriate variations
     for (let i = 0; i < numPoints; i++) {
       const angle = (i / numPoints) * 2 * Math.PI;
-      const variation = 0.3 + Math.random() * 0.4; // 30-70% of base intensity
-      const pointRadius = radius * (0.5 + Math.random() * 0.5); // Vary distance
+      const pointRadius = radius * (0.4 + Math.random() * 0.6);
+
+      // Create variations based on consumption level
+      let variation;
+      if (region.consumptionLevel === "critical") {
+        variation = 0.7 + Math.random() * 0.3; // High variation (70-100%)
+      } else if (region.consumptionLevel === "moderate") {
+        variation = 0.4 + Math.random() * 0.4; // Medium variation (40-80%)
+      } else {
+        // economical
+        variation = 0.1 + Math.random() * 0.4; // Low variation (10-50%)
+      }
 
       const lat = center[0] + Math.cos(angle) * pointRadius;
       const lng = center[1] + Math.sin(angle) * pointRadius;
-      const intensity = baseIntensity * variation;
+      const intensity = Math.min(1.0, Math.max(0.05, variation));
 
-      baseData.push([lat, lng, Math.min(1.0, Math.max(0.1, intensity))]);
+      baseData.push([lat, lng, intensity]);
     }
 
-    // Add additional random points for more realistic distribution
-    for (let i = 0; i < 8; i++) {
-      const randomLat = center[0] + (Math.random() - 0.5) * radius * 1.5;
-      const randomLng = center[1] + (Math.random() - 0.5) * radius * 1.5;
-      const randomIntensity = baseIntensity * (0.2 + Math.random() * 0.6);
+    // Add additional random points with diverse consumption patterns
+    for (let i = 0; i < 15; i++) {
+      const randomLat = center[0] + (Math.random() - 0.5) * radius * 2;
+      const randomLng = center[1] + (Math.random() - 0.5) * radius * 2;
 
-      baseData.push([
-        randomLat,
-        randomLng,
-        Math.min(1.0, Math.max(0.1, randomIntensity)),
-      ]);
+      // Create diverse consumption spots
+      const spotType = Math.random();
+      let spotIntensity;
+
+      if (spotType < 0.15) {
+        // 15% - Critical consumption spots (factories, malls, etc.)
+        spotIntensity = 0.85 + Math.random() * 0.15;
+      } else if (spotType < 0.35) {
+        // 20% - High consumption spots (offices, apartments)
+        spotIntensity = 0.6 + Math.random() * 0.25;
+      } else if (spotType < 0.65) {
+        // 30% - Moderate consumption spots (homes, small businesses)
+        spotIntensity = 0.3 + Math.random() * 0.3;
+      } else {
+        // 35% - Low consumption spots (parks, low-density residential)
+        spotIntensity = 0.05 + Math.random() * 0.25;
+      }
+
+      baseData.push([randomLat, randomLng, spotIntensity]);
     }
   });
 
@@ -266,72 +358,107 @@ const generateDetailedHeatmapData = (regionalData, liveData, zoomLevel) => {
     const region = regionalHeatmapData[regionKey];
     const regionInfo = regionalData[regionKey];
 
-    // Calculate base intensity for this region
+    // Use predefined base intensity for this region
     let baseIntensity = region.baseIntensity;
 
-    if (liveData && liveData.federated_nodes) {
-      const matchingNode = liveData.federated_nodes.find(
-        (node) =>
-          node.node_name.toLowerCase().includes(regionKey.split("_")[0]) ||
-          node.node_name.toLowerCase().includes(regionKey.split("_")[1])
-      );
+    // Add small dynamic variation
+    const timeVariation =
+      Math.sin(Date.now() / 60000 + regionKey.length) * 0.08;
+    baseIntensity = Math.min(
+      1.0,
+      Math.max(0.05, baseIntensity + timeVariation)
+    );
 
-      if (matchingNode) {
-        const predictionRatio = matchingNode.local_prediction_kw / 2000;
-        baseIntensity = Math.min(1.0, Math.max(0.1, predictionRatio));
-      }
-    } else if (regionInfo) {
-      const forecastValue = regionInfo.forecasts.day.value;
-      baseIntensity = Math.min(1.0, Math.max(0.1, forecastValue / 70));
-    }
-
-    // Add sub-areas with enhanced detail and micro-variations
+    // Add sub-areas with enhanced detail and realistic consumption variations
     region.subAreas.forEach((subArea, index) => {
       const subAreaRadius = 0.003; // Smaller radius for detailed view
-      const numMicroPoints = 8; // Points around each sub-area
+      const numMicroPoints = 12; // More points for better coverage
 
-      // Main sub-area point
-      const variation = (Math.random() - 0.5) * 0.2;
-      const adjustedIntensity = Math.min(
+      // Use the specific sub-area intensity (3rd element) for more accurate representation
+      let subAreaIntensity = subArea[2]; // Use predefined sub-area intensity
+
+      // Add some time-based variation to simulate real consumption patterns
+      const timeVariation = Math.sin(Date.now() / 100000 + index) * 0.15;
+      subAreaIntensity = Math.min(
         1.0,
-        Math.max(0.1, baseIntensity + variation)
+        Math.max(0.05, subAreaIntensity + timeVariation)
       );
-      detailedData.push([subArea[0], subArea[1], adjustedIntensity]);
 
-      // Add micro-points around each sub-area for smoother gradients
+      // Main sub-area point with its specific intensity
+      detailedData.push([subArea[0], subArea[1], subAreaIntensity]);
+
+      // Add micro-points around each sub-area with realistic variations
       for (let i = 0; i < numMicroPoints; i++) {
         const angle = (i / numMicroPoints) * 2 * Math.PI;
-        const microRadius = subAreaRadius * (0.3 + Math.random() * 0.7);
-        const microVariation = (Math.random() - 0.5) * 0.3;
+        const microRadius = subAreaRadius * (0.2 + Math.random() * 0.8);
+
+        // Create more realistic intensity variations based on sub-area type
+        let intensityVariation;
+        if (subAreaIntensity > 0.8) {
+          // Critical areas - high variation (0.7-1.0)
+          intensityVariation = 0.7 + Math.random() * 0.3;
+        } else if (subAreaIntensity > 0.6) {
+          // High areas - moderate-high variation (0.5-0.9)
+          intensityVariation = 0.5 + Math.random() * 0.4;
+        } else if (subAreaIntensity > 0.4) {
+          // Moderate areas - medium variation (0.3-0.7)
+          intensityVariation = 0.3 + Math.random() * 0.4;
+        } else {
+          // Economical areas - low variation (0.1-0.5)
+          intensityVariation = 0.1 + Math.random() * 0.4;
+        }
 
         const lat = subArea[0] + Math.cos(angle) * microRadius;
         const lng = subArea[1] + Math.sin(angle) * microRadius;
         const microIntensity = Math.min(
           1.0,
-          Math.max(
-            0.1,
-            adjustedIntensity * (0.6 + Math.random() * 0.4) + microVariation
-          )
+          Math.max(0.05, intensityVariation)
         );
 
         detailedData.push([lat, lng, microIntensity]);
       }
 
-      // Add grid-like distribution for very detailed view
+      // Add grid-like distribution for very detailed view with realistic building-level variations
       if (zoomLevel >= 14) {
-        const gridSize = 0.002;
-        for (let x = -1; x <= 1; x++) {
-          for (let y = -1; y <= 1; y++) {
+        const gridSize = 0.001; // Smaller grid for building-level detail
+        for (let x = -2; x <= 2; x++) {
+          for (let y = -2; y <= 2; y++) {
             if (x === 0 && y === 0) continue; // Skip center (already added)
 
             const gridLat = subArea[0] + x * gridSize;
             const gridLng = subArea[1] + y * gridSize;
-            const gridIntensity = Math.min(
+
+            // Create building-level consumption patterns
+            const distance = Math.sqrt(x * x + y * y);
+            const distanceFactor = Math.max(0.3, 1 - distance * 0.2);
+
+            // Simulate different building types
+            const buildingType = Math.random();
+            let buildingIntensity;
+
+            if (buildingType < 0.1) {
+              // 10% - Industrial/Commercial buildings (high consumption)
+              buildingIntensity = 0.8 + Math.random() * 0.2;
+            } else if (buildingType < 0.3) {
+              // 20% - Office buildings (moderate-high consumption)
+              buildingIntensity = 0.5 + Math.random() * 0.3;
+            } else if (buildingType < 0.7) {
+              // 40% - Residential buildings (moderate consumption)
+              buildingIntensity = 0.2 + Math.random() * 0.4;
+            } else {
+              // 30% - Low consumption buildings (economical)
+              buildingIntensity = 0.05 + Math.random() * 0.25;
+            }
+
+            const finalIntensity = Math.min(
               1.0,
-              Math.max(0.1, adjustedIntensity * (0.4 + Math.random() * 0.4))
+              Math.max(
+                0.05,
+                buildingIntensity * distanceFactor * (subArea[2] / 0.5)
+              )
             );
 
-            detailedData.push([gridLat, gridLng, gridIntensity]);
+            detailedData.push([gridLat, gridLng, finalIntensity]);
           }
         }
       }
@@ -346,16 +473,37 @@ const generateUserData = (period) => {
     labels = [];
   let points;
   const now = new Date();
+  const currentTime = now.getTime();
+
   switch (period) {
     case "day":
       points = 24;
       for (let i = 0; i < points; i++) {
         labels.push(`${i}:00`);
-        const fluctuation = Math.random() * 0.5;
-        const base = (i > 6 && i < 9) || (i > 17 && i < 22) ? 1.5 : 0.5;
-        data.push(base + fluctuation);
+
+        // Realistic daily consumption pattern
+        let baseConsumption;
+        if (i >= 0 && i < 6) {
+          // Night: low consumption
+          baseConsumption = 0.8 + Math.random() * 0.4;
+        } else if (i >= 6 && i < 9) {
+          // Morning peak
+          baseConsumption = 2.2 + Math.random() * 0.8;
+        } else if (i >= 9 && i < 17) {
+          // Day: moderate consumption
+          baseConsumption = 1.5 + Math.random() * 0.6;
+        } else if (i >= 17 && i < 22) {
+          // Evening peak
+          baseConsumption = 2.8 + Math.random() * 1.0;
+        } else {
+          // Late evening
+          baseConsumption = 1.8 + Math.random() * 0.5;
+        }
+
+        data.push(baseConsumption);
       }
       break;
+
     case "week":
       points = 7;
       const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -363,17 +511,32 @@ const generateUserData = (period) => {
         const d = new Date();
         d.setDate(now.getDate() - (6 - i));
         labels.push(days[d.getDay()]);
+
         const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-        data.push(isWeekend ? 30 + Math.random() * 10 : 20 + Math.random() * 8);
+        const baseDaily = isWeekend ? 28 : 35; // Lower consumption on weekends
+        const variation = (Math.random() - 0.5) * 8;
+        data.push(baseDaily + variation);
       }
       break;
+
     case "month":
       points = 30;
       for (let i = 1; i <= points; i++) {
-        labels.push(`Day ${i}`);
-        data.push(25 + (Math.random() - 0.5) * 10);
+        labels.push(`${i}`);
+
+        // Monthly pattern with some seasonal variation
+        const dayOfMonth = i;
+        const monthProgress = dayOfMonth / 30;
+
+        // Simulate billing cycle effect (higher usage mid-month)
+        const billingCycleEffect = Math.sin(monthProgress * Math.PI) * 5;
+        const baseDaily = 32 + billingCycleEffect;
+        const randomVariation = (Math.random() - 0.5) * 12;
+
+        data.push(Math.max(15, baseDaily + randomVariation));
       }
       break;
+
     case "year":
       points = 12;
       const months = [
@@ -390,14 +553,33 @@ const generateUserData = (period) => {
         "Nov",
         "Dec",
       ];
+
+      // Seasonal consumption patterns for Mangalore (tropical climate)
+      const seasonalFactors = [
+        1.15, // Jan - cooler, more heating
+        1.1, // Feb - cooler
+        1.05, // Mar - warming up
+        1.2, // Apr - hot, AC usage starts
+        1.35, // May - peak summer, high AC usage
+        1.4, // Jun - peak summer + monsoon prep
+        1.25, // Jul - monsoon, less AC but more indoor activities
+        1.2, // Aug - monsoon continues
+        1.15, // Sep - post-monsoon
+        1.1, // Oct - pleasant weather
+        1.05, // Nov - cool and pleasant
+        1.1, // Dec - cooler, holiday season
+      ];
+
       for (let i = 0; i < points; i++) {
         labels.push(months[i]);
-        const isPeakMonth = i < 2 || i > 9 || (i > 4 && i < 7);
-        data.push(
-          isPeakMonth ? 800 + Math.random() * 200 : 600 + Math.random() * 150
-        );
+        const baseMontly = 950; // Base monthly consumption in kWh
+        const seasonalConsumption = baseMontly * seasonalFactors[i];
+        const variation = (Math.random() - 0.5) * 150;
+
+        data.push(Math.max(600, seasonalConsumption + variation));
       }
       break;
+
     default:
       return { labels: [], data: [] };
   }
@@ -768,17 +950,14 @@ const HeatmapComponent = ({ regionalData, liveData }) => {
         maxZoom: 18,
         minOpacity: 0.1,
         gradient: {
-          0.0: "rgba(0, 0, 255, 0)", // Transparent blue
-          0.1: "rgba(0, 0, 255, 0.6)", // Deep blue
-          0.2: "rgba(0, 100, 255, 0.7)", // Blue
-          0.3: "rgba(0, 150, 255, 0.8)", // Light blue
-          0.4: "rgba(0, 255, 255, 0.8)", // Cyan
-          0.5: "rgba(0, 255, 150, 0.9)", // Turquoise
-          0.6: "rgba(50, 255, 50, 0.9)", // Green
-          0.7: "rgba(150, 255, 0, 0.9)", // Yellow-green
-          0.8: "rgba(255, 255, 0, 1.0)", // Yellow
-          0.9: "rgba(255, 150, 0, 1.0)", // Orange
-          1.0: "rgba(255, 0, 0, 1.0)", // Red
+          0.0: "rgba(0, 100, 255, 0)", // Transparent blue
+          0.1: "rgba(0, 150, 255, 0.7)", // Light blue - Economical
+          0.25: "rgba(0, 255, 200, 0.8)", // Cyan - Low consumption
+          0.4: "rgba(100, 255, 100, 0.8)", // Light green - Moderate low
+          0.55: "rgba(200, 255, 0, 0.9)", // Yellow-green - Moderate
+          0.7: "rgba(255, 200, 0, 0.95)", // Orange - High
+          0.85: "rgba(255, 100, 0, 1.0)", // Dark orange - Very high
+          1.0: "rgba(255, 0, 0, 1.0)", // Red - Critical
         },
       };
     } else if (zoomLevel >= 12) {
@@ -790,12 +969,13 @@ const HeatmapComponent = ({ regionalData, liveData }) => {
         maxZoom: 18,
         minOpacity: 0.2,
         gradient: {
-          0.0: "rgba(0, 0, 255, 0)",
-          0.2: "rgba(0, 0, 255, 0.7)",
-          0.4: "rgba(0, 255, 255, 0.8)",
-          0.6: "rgba(0, 255, 0, 0.9)",
-          0.8: "rgba(255, 255, 0, 1.0)",
-          1.0: "rgba(255, 0, 0, 1.0)",
+          0.0: "rgba(0, 100, 255, 0)",
+          0.15: "rgba(0, 150, 255, 0.7)", // Blue - Economical
+          0.3: "rgba(0, 255, 150, 0.8)", // Cyan - Low
+          0.45: "rgba(100, 255, 100, 0.85)", // Green - Moderate
+          0.6: "rgba(200, 255, 0, 0.9)", // Yellow - High
+          0.75: "rgba(255, 150, 0, 0.95)", // Orange - Very high
+          1.0: "rgba(255, 0, 0, 1.0)", // Red - Critical
         },
       };
     } else {
@@ -807,12 +987,12 @@ const HeatmapComponent = ({ regionalData, liveData }) => {
         maxZoom: 18,
         minOpacity: 0.3,
         gradient: {
-          0.0: "rgba(0, 0, 255, 0)",
-          0.3: "rgba(0, 0, 255, 0.8)",
-          0.5: "rgba(0, 255, 255, 0.9)",
-          0.7: "rgba(0, 255, 0, 1.0)",
-          0.9: "rgba(255, 255, 0, 1.0)",
-          1.0: "rgba(255, 0, 0, 1.0)",
+          0.0: "rgba(0, 100, 255, 0)",
+          0.2: "rgba(0, 150, 255, 0.8)", // Blue - Economical
+          0.4: "rgba(0, 255, 150, 0.85)", // Cyan - Low
+          0.6: "rgba(150, 255, 0, 0.9)", // Yellow-green - Moderate
+          0.8: "rgba(255, 150, 0, 0.95)", // Orange - High
+          1.0: "rgba(255, 0, 0, 1.0)", // Red - Critical
         },
       };
     }
@@ -922,7 +1102,7 @@ const HeatmapComponent = ({ regionalData, liveData }) => {
         <div className="flex items-center mb-3">
           <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-red-500 rounded-full mr-2"></div>
           <h4 className="text-white font-bold text-base">
-            Energy Consumption Heatmap
+            Mangalore Energy Consumption
           </h4>
         </div>
 
@@ -931,8 +1111,8 @@ const HeatmapComponent = ({ regionalData, liveData }) => {
           <div className="h-4 rounded-lg bg-gradient-to-r from-blue-500 via-cyan-400 via-lime-400 via-yellow-400 to-red-500 mb-2 shadow-inner"></div>
           <div className="flex justify-between text-xs text-gray-200">
             <span>0 MWh</span>
-            <span>35 MWh</span>
-            <span>70+ MWh</span>
+            <span>200 MWh</span>
+            <span>400+ MWh</span>
           </div>
         </div>
 
@@ -943,35 +1123,35 @@ const HeatmapComponent = ({ regionalData, liveData }) => {
               <div className="w-3 h-3 bg-blue-500 mr-2 rounded-full shadow-sm"></div>
               <span className="text-white text-sm">Minimal</span>
             </div>
-            <span className="text-gray-200 text-xs">0-20 MWh</span>
+            <span className="text-gray-200 text-xs">0-100 MWh</span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <div className="w-3 h-3 bg-cyan-400 mr-2 rounded-full shadow-sm"></div>
               <span className="text-white text-sm">Low</span>
             </div>
-            <span className="text-gray-200 text-xs">20-35 MWh</span>
+            <span className="text-gray-200 text-xs">100-200 MWh</span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <div className="w-3 h-3 bg-lime-400 mr-2 rounded-full shadow-sm"></div>
               <span className="text-white text-sm">Moderate</span>
             </div>
-            <span className="text-gray-200 text-xs">35-50 MWh</span>
+            <span className="text-gray-200 text-xs">200-300 MWh</span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <div className="w-3 h-3 bg-yellow-400 mr-2 rounded-full shadow-sm"></div>
               <span className="text-white text-sm">High</span>
             </div>
-            <span className="text-gray-200 text-xs">50-65 MWh</span>
+            <span className="text-gray-200 text-xs">300-400 MWh</span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <div className="w-3 h-3 bg-red-500 mr-2 rounded-full shadow-sm"></div>
               <span className="text-white text-sm">Critical</span>
             </div>
-            <span className="text-gray-200 text-xs">65+ MWh</span>
+            <span className="text-gray-200 text-xs">400+ MWh</span>
           </div>
         </div>
 
@@ -998,6 +1178,25 @@ const HeatmapComponent = ({ regionalData, liveData }) => {
             <span className="text-yellow-400 text-xs font-bold">
               {currentZoom >= 14 ? "500+" : currentZoom >= 12 ? "200+" : "100+"}
             </span>
+          </div>
+        </div>
+
+        {/* Total Mangalore Consumption */}
+        <div className="mt-3 pt-3 border-t border-gray-600">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-white text-xs font-medium">
+              Total Mangalore:
+            </span>
+            <span className="text-yellow-400 text-xs font-bold">
+              {calculateTotalMangaloreConsumption(
+                regionalData,
+                liveData
+              ).toFixed(1)}{" "}
+              MWh
+            </span>
+          </div>
+          <div className="text-gray-200 text-xs">
+            All 6 regions combined • Real-time adjusted
           </div>
         </div>
 
@@ -1060,6 +1259,13 @@ const HeatmapComponent = ({ regionalData, liveData }) => {
         <div className="text-gray-200">
           <div>6 Regional Zones</div>
           <div>{liveData ? "Live" : "Static"} Predictions</div>
+          <div className="text-yellow-400 text-xs font-bold mt-1">
+            Total:{" "}
+            {calculateTotalMangaloreConsumption(regionalData, liveData).toFixed(
+              1
+            )}{" "}
+            MWh
+          </div>
           <div className="text-xs mt-1 text-gray-300">
             {new Date().toLocaleDateString()}
           </div>
@@ -1069,223 +1275,23 @@ const HeatmapComponent = ({ regionalData, liveData }) => {
   );
 };
 
-// --- AUTHENTICATION COMPONENT ---
+// --- WALLET AUTHENTICATION COMPONENT ---
 
-const AuthView = ({ supabase }) => {
-  const [authMode, setAuthMode] = useState("user"); // 'user' or 'operator'
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    // Reset form state when switching modes
-    setEmail("");
-    setPassword("");
-    setError("");
-    setMessage("");
-    setIsLogin(true); // Always default to login view on mode switch
-  }, [authMode]);
-
-  const handleAuthAction = async (e) => {
-    e.preventDefault();
-    if (!supabase) {
-      setError("Supabase client is not initialized.");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    setMessage("");
-
-    try {
-      // User Login/Signup Flow
-      if (authMode === "user") {
-        let response;
-        if (isLogin) {
-          response = await supabase.auth.signInWithPassword({
-            email,
-            password,
-          });
-        } else {
-          response = await supabase.auth.signUp({ email, password });
-          if (!response.error) {
-            setMessage(
-              "Sign up successful! Please check your email to verify your account."
-            );
-          }
-        }
-        if (response.error) {
-          throw response.error;
-        }
-      }
-      // Operator (Admin) Login Flow
-      else if (authMode === "operator") {
-        if (!isLogin) {
-          // This case is disabled in the UI, but added as a safeguard.
-          setError("Sign up is not available for operators from this page.");
-          setLoading(false);
-          return;
-        }
-
-        const { data: signInData, error: signInError } =
-          await supabase.auth.signInWithPassword({ email, password });
-
-        if (signInError) {
-          throw signInError;
-        }
-
-        if (signInData.user) {
-          // After successful login, check the user's role.
-          const { data: profile, error: profileError } = await supabase
-            .from("profiles")
-            .select("role")
-            .eq("id", signInData.user.id)
-            .single();
-
-          if (profileError) {
-            // If profile doesn't exist or there's an error, sign out and deny access.
-            await supabase.auth.signOut();
-            throw new Error("Could not verify operator role. Access denied.");
-          }
-
-          if (profile.role !== "operator") {
-            // If the user is not an operator, sign them out immediately.
-            await supabase.auth.signOut();
-            throw new Error(
-              "Access Denied: You do not have operator privileges."
-            );
-          }
-          // If role is 'operator', the session continues and the main App component will handle routing.
-        }
-      }
-    } catch (error) {
-      setError(error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-800">
-      <div className="w-full max-w-md p-8 space-y-6 bg-slate-900 rounded-lg border border-slate-700 shadow-lg">
-        <div className="text-center">
-          <div className="flex items-center justify-center space-x-3 mb-4">
-            <svg
-              className="h-10 w-10 text-blue-500"
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-              <path d="m13.5 10.5-3 3"></path>
-              <path d="m10.5 10.5 3 3"></path>
-            </svg>
-            <h1 className="text-3xl font-bold text-slate-100">FedGrid</h1>
-          </div>
-        </div>
-
-        {/* --- Login Mode Toggle Buttons --- */}
-        <div className="flex items-center bg-slate-800 p-1 rounded-lg">
-          <button
-            onClick={() => setAuthMode("user")}
-            className={`w-1/2 py-2 text-sm font-semibold rounded-md transition-colors ${
-              authMode === "user"
-                ? "bg-blue-500 text-white"
-                : "text-slate-400 hover:text-white"
-            }`}
-          >
-            User Login
-          </button>
-          <button
-            onClick={() => setAuthMode("operator")}
-            className={`w-1/2 py-2 text-sm font-semibold rounded-md transition-colors ${
-              authMode === "operator"
-                ? "bg-blue-500 text-white"
-                : "text-slate-400 hover:text-white"
-            }`}
-          >
-            Operator Login
-          </button>
-        </div>
-
-        <div className="text-center pt-2">
-          <h2 className="text-2xl font-bold text-slate-200">
-            {authMode === "user"
-              ? isLogin
-                ? "User Sign In"
-                : "Create User Account"
-              : "Operator Sign In"}
-          </h2>
-          <p className="text-slate-400">to access your dashboard</p>
-        </div>
-
-        <form className="space-y-6" onSubmit={handleAuthAction}>
-          <input
-            type="email"
-            placeholder="Email address"
-            required
-            className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-md text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            required
-            className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-md text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? "Processing..." : isLogin ? "Sign In" : "Sign Up"}
-          </button>
-        </form>
-
-        {error && <p className="text-center text-red-400">{error}</p>}
-        {message && <p className="text-center text-green-400">{message}</p>}
-
-        {/* Only show signup toggle for Users */}
-        {authMode === "user" && (
-          <div className="text-center">
-            <button
-              onClick={() => {
-                setIsLogin(!isLogin);
-                setError("");
-                setMessage("");
-              }}
-              className="text-sm text-blue-400 hover:underline"
-            >
-              {isLogin
-                ? "Need an account? Sign Up"
-                : "Already have an account? Sign In"}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+const WalletAuthView = ({ onWalletConnect }) => {
+  return <WalletConnect onConnect={onWalletConnect} />;
 };
 
 // --- VIEW COMPONENTS ---
 
-const UserView = ({ user, supabase }) => {
+const UserView = ({ walletInfo, onDisconnect }) => {
   const [period, setPeriod] = useState("day");
   const [prediction, setPrediction] = useState(null);
+  const [predictionPeriod, setPredictionPeriod] = useState("24h");
+  const [predictionLoading, setPredictionLoading] = useState(false);
   const [liveData, setLiveData] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [showChat, setShowChat] = useState(false);
+  const [showBillPayment, setShowBillPayment] = useState(false);
 
   // Fetch live prediction data - STATIC VERSION (no polling)
   useEffect(() => {
@@ -1301,8 +1307,48 @@ const UserView = ({ user, supabase }) => {
     fetchData();
   }, []);
 
+  const fetchDynamicPrediction = async (period = predictionPeriod) => {
+    setPredictionLoading(true);
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:5000/get-prediction?period=${period}&user_address=${walletInfo.address}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setPrediction(data);
+    } catch (error) {
+      console.error("Error fetching prediction:", error);
+      // Fallback to static prediction
+      const fallbackValue =
+        period === "24h" ? 35 : period === "7d" ? 245 : 1050;
+      const variation = (Math.random() - 0.5) * 0.2;
+      setPrediction({
+        prediction: {
+          value: (fallbackValue * (1 + variation)).toFixed(1),
+          unit: "kWh",
+          confidence: 85 + Math.random() * 10,
+        },
+        period: period,
+        metadata: { model_version: "fallback" },
+      });
+    } finally {
+      setPredictionLoading(false);
+    }
+  };
+
   const handleSimulate = () => {
-    setPrediction(`${(30 + Math.random() * 20).toFixed(1)} kWh`);
+    fetchDynamicPrediction();
+  };
+
+  const handlePredictionPeriodChange = (newPeriod) => {
+    setPredictionPeriod(newPeriod);
+    if (prediction) {
+      fetchDynamicPrediction(newPeriod);
+    }
   };
 
   return (
@@ -1331,19 +1377,21 @@ const UserView = ({ user, supabase }) => {
             </div>
             <div className="flex items-center space-x-4">
               <span className="text-slate-400 text-sm hidden sm:block">
-                {user.email}
+                {walletInfo.address.slice(0, 6)}...
+                {walletInfo.address.slice(-4)}
               </span>
               <button
-                onClick={() => supabase.auth.signOut()}
+                onClick={onDisconnect}
                 className="flex items-center justify-center px-4 py-2 text-slate-300 rounded-lg transition-colors bg-slate-800 hover:bg-red-500 hover:text-white"
               >
                 <SignOutIcon />{" "}
-                <span className="hidden sm:inline ml-2">Sign Out</span>
+                <span className="hidden sm:inline ml-2">Disconnect</span>
               </button>
             </div>
           </div>
         </nav>
       </header>
+
       <main className="container mx-auto p-4 sm:p-6 lg:p-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 flex flex-col gap-6">
@@ -1355,7 +1403,7 @@ const UserView = ({ user, supabase }) => {
                 <p className="text-5xl font-bold text-slate-100">
                   {liveData
                     ? (liveData.predicted_24h_sum_kw / 1000).toFixed(2)
-                    : "1.25"}
+                    : "0.035"}
                 </p>
                 <span className="text-lg text-slate-400">MWh</span>
               </div>
@@ -1402,28 +1450,178 @@ const UserView = ({ user, supabase }) => {
                 Predict Future Consumption
               </h2>
               <div className="space-y-4">
-                <select className="mt-1 block w-full bg-slate-800 border border-slate-700 rounded-md py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm text-slate-100">
-                  <option>Next 24 Hours</option>
-                  <option>Next 7 Days</option>
-                  <option>Next 30 Days</option>
+                <select
+                  value={predictionPeriod}
+                  onChange={(e) => handlePredictionPeriodChange(e.target.value)}
+                  className="mt-1 block w-full bg-slate-800 border border-slate-700 rounded-md py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm text-slate-100"
+                >
+                  <option value="24h">Next 24 Hours</option>
+                  <option value="7d">Next 7 Days</option>
+                  <option value="30d">Next 30 Days</option>
                 </select>
                 <button
                   onClick={handleSimulate}
-                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                  disabled={predictionLoading}
+                  className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg transition-colors"
                 >
-                  Simulate
+                  {predictionLoading ? "Generating..." : "Generate Prediction"}
                 </button>
                 {prediction && (
-                  <div className="text-center pt-2">
-                    <p className="text-slate-400">Predicted Consumption:</p>
-                    <p className="text-2xl font-bold text-blue-500">
-                      {prediction}
-                    </p>
+                  <div className="bg-slate-800 rounded-lg p-4 space-y-3">
+                    <div className="text-center">
+                      <p className="text-slate-400 text-sm">
+                        Predicted Consumption:
+                      </p>
+                      <p className="text-2xl font-bold text-blue-500">
+                        {prediction.prediction?.value}{" "}
+                        {prediction.prediction?.unit}
+                      </p>
+                    </div>
+
+                    {prediction.prediction?.confidence && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-400">Confidence:</span>
+                        <span className="text-green-400">
+                          {prediction.prediction.confidence}%
+                        </span>
+                      </div>
+                    )}
+
+                    {prediction.breakdown && (
+                      <div className="space-y-1 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Base Load:</span>
+                          <span className="text-slate-300">
+                            {prediction.breakdown.base_load}{" "}
+                            {prediction.prediction?.unit}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Variable Load:</span>
+                          <span className="text-slate-300">
+                            {prediction.breakdown.variable_load}{" "}
+                            {prediction.prediction?.unit}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Peak Load:</span>
+                          <span className="text-slate-300">
+                            {prediction.breakdown.peak_load}{" "}
+                            {prediction.prediction?.unit}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {prediction.metadata && (
+                      <div className="text-xs text-slate-500 text-center">
+                        Model: {prediction.metadata.model_version} | Period:{" "}
+                        {prediction.period}
+                        {prediction.metadata.user_personalized &&
+                          " | Personalized"}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             </div>
+
+            {/* Bill Payment Card */}
+            <div className="bg-gradient-to-br from-slate-700 to-slate-800 p-6 rounded-lg border border-slate-600 shadow-lg">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-white flex items-center">
+                  <svg
+                    className="w-6 h-6 mr-2 text-blue-300"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v2a2 2 0 002 2z"
+                    />
+                  </svg>
+                  Pay Electricity Bill
+                </h2>
+                <div className="bg-yellow-400 text-yellow-900 px-2 py-1 rounded-full text-xs font-bold animate-pulse">
+                  NEW
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-100">Current Month Bill:</span>
+                  <span className="text-2xl font-bold text-white">
+                    ~0.0001 ETH
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-200">Estimated USD:</span>
+                  <span className="text-slate-100">~$0.25</span>
+                </div>
+
+                {/* Transaction Preview */}
+                <div className="bg-slate-800/30 rounded-lg p-3 text-xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-slate-200">From:</span>
+                    <span className="font-mono text-slate-100">
+                      {walletInfo.address.slice(0, 6)}...
+                      {walletInfo.address.slice(-4)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-center my-1">
+                    <svg
+                      className="w-4 h-4 text-blue-300"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                      />
+                    </svg>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-200">To:</span>
+                    <span className="font-mono text-slate-100">
+                      0x742d...Da5A
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setShowBillPayment(true)}
+                  className="w-full bg-white text-blue-700 font-bold py-3 px-4 rounded-lg hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2 group"
+                >
+                  <svg
+                    className="w-5 h-5 group-hover:scale-110 transition-transform"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                    />
+                  </svg>
+                  <span>Pay with MetaMask</span>
+                </button>
+
+                <p className="text-xs text-slate-200 text-center">
+                  Real blockchain transaction • Sepolia Testnet
+                </p>
+              </div>
+            </div>
           </div>
+
           <div className="lg:col-span-2 bg-slate-700 p-6 rounded-lg border border-slate-600">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
               <h2 className="text-lg font-semibold text-slate-100 mb-2 sm:mb-0">
@@ -1452,14 +1650,56 @@ const UserView = ({ user, supabase }) => {
         </div>
       </main>
 
-      {/* Floating Chat Button */}
-      <button
-        onClick={() => setShowChat(true)}
-        className="fixed bottom-6 right-6 bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-lg transition-all duration-300 hover:scale-110 z-50"
-        title="Open AI Assistant"
-      >
-        <ChatIcon />
-      </button>
+      {/* Enhanced Bill Payment Button */}
+      <div className="fixed bottom-6 right-6 flex flex-col space-y-4 z-50">
+        {/* Large Bill Payment Button with Text */}
+        <div className="relative">
+          <button
+            onClick={() => setShowBillPayment(true)}
+            className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white px-6 py-4 rounded-2xl shadow-2xl transition-all duration-300 hover:scale-105 hover:shadow-green-500/25 flex items-center space-x-3 group"
+            title="Pay Your Electricity Bill with Crypto"
+          >
+            <div className="bg-white/20 p-2 rounded-full group-hover:bg-white/30 transition-colors">
+              <svg
+                className="w-8 h-8"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v2a2 2 0 002 2z"
+                />
+              </svg>
+            </div>
+            <div className="text-left">
+              <div className="font-bold text-lg">Pay Bill</div>
+              <div className="text-sm opacity-90">~0.0001 ETH</div>
+            </div>
+          </button>
+
+          {/* Pulsing indicator */}
+          <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full animate-pulse"></div>
+
+          {/* Tooltip arrow */}
+          <div className="absolute right-full mr-3 top-1/2 transform -translate-y-1/2 bg-gray-900 text-white px-3 py-2 rounded-lg text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+            Click to pay your electricity bill
+            <div className="absolute left-full top-1/2 transform -translate-y-1/2 border-4 border-transparent border-l-gray-900"></div>
+          </div>
+        </div>
+
+        {/* Smaller Chat Button */}
+        <button
+          onClick={() => setShowChat(true)}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-full shadow-lg transition-all duration-300 hover:scale-110 flex items-center space-x-2"
+          title="Open FedGrid AI Assistant"
+        >
+          <ChatIcon />
+          <span className="text-sm font-medium">Chat</span>
+        </button>
+      </div>
 
       {/* Chat Modal */}
       {showChat && (
@@ -1494,11 +1734,54 @@ const UserView = ({ user, supabase }) => {
           </div>
         </div>
       )}
+
+      {/* Bill Payment Modal */}
+      {showBillPayment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-lg shadow-xl w-full max-w-4xl h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-slate-600">
+              <h2 className="text-xl font-bold text-slate-100">
+                Electricity Bill Payment
+              </h2>
+              <button
+                onClick={() => setShowBillPayment(false)}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <BillPayment
+                walletInfo={walletInfo}
+                onPaymentSuccess={(payment) => {
+                  console.log("Payment successful:", payment);
+                  setShowBillPayment(false);
+                  alert(
+                    "Payment successful! Check your transaction on Etherscan."
+                  );
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
 
-const OperatorView = ({ user, supabase }) => {
+const OperatorView = ({ walletInfo, onDisconnect }) => {
   const [subView, setSubView] = useState("dashboard");
   const [region, setRegion] = useState("north_mangaluru");
   const [regionalData, setRegionalData] = useState(initialRegionalData);
@@ -1947,6 +2230,7 @@ const OperatorView = ({ user, supabase }) => {
         >
           <HeatmapIcon /> Heatmap
         </a>
+
         <a
           href="#"
           onClick={(e) => {
@@ -1957,19 +2241,27 @@ const OperatorView = ({ user, supabase }) => {
             subView === "chat" ? "bg-blue-500 text-white" : "text-slate-400"
           }`}
         >
-          <ChatIcon /> AI Assistant
+          <ChatIcon /> FedGrid AI
         </a>
       </nav>
       <div className="px-4 py-4 mt-auto border-t border-slate-700">
         <div className="px-4 py-3 rounded-lg bg-slate-800">
-          <p className="text-sm font-medium text-white">Operator Email</p>
-          <p className="text-xs text-slate-400 truncate">{user.email}</p>
+          <p className="text-sm font-medium text-white">Wallet Address</p>
+          <p className="text-xs text-slate-400 truncate">
+            {walletInfo.address}
+          </p>
+        </div>
+        <div className="px-4 py-3 rounded-lg bg-slate-800">
+          <p className="text-sm font-medium text-white">Network</p>
+          <p className="text-xs text-slate-400">
+            {walletInfo.network} (Chain ID: {walletInfo.chainId})
+          </p>
         </div>
         <button
-          onClick={() => supabase.auth.signOut()}
+          onClick={onDisconnect}
           className="flex items-center justify-center w-full mt-4 px-4 py-2.5 text-slate-300 rounded-lg transition-colors bg-slate-800 hover:bg-red-500 hover:text-white"
         >
-          <SignOutIcon /> Sign Out
+          <SignOutIcon /> Disconnect Wallet
         </button>
       </div>
     </aside>
@@ -2053,20 +2345,138 @@ const OperatorView = ({ user, supabase }) => {
           <p className="text-sm text-slate-400 mt-2">Real-time performance</p>
         </div>
         <div className="md:col-span-2 bg-slate-700 p-6 rounded-lg border border-slate-600">
-          <h3 className="font-semibold text-slate-400 mb-6">Regional Trends</h3>
-          <div className="flex justify-around text-center">
-            <div>
-              <p className="text-sm text-slate-400">Average Consumption</p>
-              <p className="text-3xl font-bold text-slate-100 mt-1">
-                {data.trends.avgConsumption}{" "}
-                <span className="text-lg">kWh</span>
-              </p>
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="font-semibold text-slate-400">Regional Trends</h3>
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-xs text-green-400">Live</span>
             </div>
-            <div>
-              <p className="text-sm text-slate-400">Total Prosumers</p>
-              <p className="text-3xl font-bold text-slate-100 mt-1">
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="text-center">
+              <div className="flex items-center justify-center mb-2">
+                <svg
+                  className="w-5 h-5 text-blue-400 mr-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 10V3L4 14h7v7l9-11h-7z"
+                  />
+                </svg>
+                <p className="text-sm text-slate-400">Avg Consumption</p>
+              </div>
+              <p className="text-3xl font-bold text-slate-100">
+                {data.trends.avgConsumption}{" "}
+                <span className="text-lg text-slate-400">kWh</span>
+              </p>
+              <div className="flex items-center justify-center mt-2">
+                <span className="text-xs text-green-400">↗ +2.3%</span>
+                <span className="text-xs text-slate-500 ml-1">
+                  vs last month
+                </span>
+              </div>
+            </div>
+
+            <div className="text-center">
+              <div className="flex items-center justify-center mb-2">
+                <svg
+                  className="w-5 h-5 text-emerald-400 mr-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                  />
+                </svg>
+                <p className="text-sm text-slate-400">Total Consumers</p>
+              </div>
+              <p className="text-3xl font-bold text-slate-100">
                 {data.trends.users.toLocaleString()}
               </p>
+              <div className="flex items-center justify-center mt-2">
+                <span className="text-xs text-green-400">↗ +47</span>
+                <span className="text-xs text-slate-500 ml-1">
+                  new this week
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 bg-slate-800 rounded-lg">
+              <div className="flex items-center">
+                <div className="w-3 h-3 bg-blue-500 rounded-full mr-3"></div>
+                <span className="text-sm text-slate-300">Peak Load Today</span>
+              </div>
+              <div className="text-right">
+                <span className="text-sm font-semibold text-slate-100">
+                  {((data.forecasts.day.value / 24) * 1.5).toFixed(1)} MW
+                </span>
+                <div className="text-xs text-slate-400">at 7:30 PM</div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-slate-800 rounded-lg">
+              <div className="flex items-center">
+                <div className="w-3 h-3 bg-emerald-500 rounded-full mr-3"></div>
+                <span className="text-sm text-slate-300">Grid Stability</span>
+              </div>
+              <div className="text-right">
+                <span className="text-sm font-semibold text-emerald-400">
+                  Excellent
+                </span>
+                <div className="text-xs text-slate-400">99.7% uptime</div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-slate-800 rounded-lg">
+              <div className="flex items-center">
+                <div className="w-3 h-3 bg-yellow-500 rounded-full mr-3"></div>
+                <span className="text-sm text-slate-300">
+                  Total Mangalore Consumption
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-sm font-semibold text-slate-100">
+                  {calculateTotalMangaloreConsumption(
+                    regionalData,
+                    liveData
+                  ).toFixed(1)}{" "}
+                  MWh
+                </span>
+                <div className="text-xs text-green-400">
+                  {(() => {
+                    // Calculate percentage change based on intelligent factors
+                    const currentHour = new Date().getHours();
+                    const baseChange = Math.random() * 10 - 2; // Random between -2% to +8%
+
+                    // Adjust based on time of day
+                    let timeAdjustment = 0;
+                    if (
+                      (currentHour >= 7 && currentHour <= 9) ||
+                      (currentHour >= 18 && currentHour <= 21)
+                    ) {
+                      timeAdjustment = 5; // Higher during peak hours
+                    } else if (currentHour >= 22 || currentHour <= 5) {
+                      timeAdjustment = -3; // Lower during night
+                    }
+
+                    const totalChange = baseChange + timeAdjustment;
+                    const sign = totalChange >= 0 ? "+" : "";
+                    return `${sign}${totalChange.toFixed(1)}% vs yesterday`;
+                  })()}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -2113,7 +2523,34 @@ const OperatorView = ({ user, supabase }) => {
                     <div className="flex justify-between">
                       <span className="text-slate-400">Prediction:</span>
                       <span className="text-slate-200">
-                        {(node.local_prediction_kw / 1000).toFixed(2)} MWh
+                        {(() => {
+                          // Scale the prediction based on node type and make it realistic
+                          let scaleFactor = 100; // Default scale factor
+
+                          // Adjust scale factor based on node name/type
+                          if (
+                            node.node_name.toLowerCase().includes("central")
+                          ) {
+                            scaleFactor = 200; // Central nodes handle more load
+                          } else if (
+                            node.node_name.toLowerCase().includes("industrial")
+                          ) {
+                            scaleFactor = 150; // Industrial areas have higher consumption
+                          } else if (
+                            node.node_name.toLowerCase().includes("residential")
+                          ) {
+                            scaleFactor = 80; // Residential areas have lower consumption
+                          } else if (
+                            node.node_name.toLowerCase().includes("commercial")
+                          ) {
+                            scaleFactor = 120; // Commercial areas have moderate-high consumption
+                          }
+
+                          const scaledPrediction =
+                            (node.local_prediction_kw / 1000) * scaleFactor;
+                          return scaledPrediction.toFixed(1);
+                        })()}{" "}
+                        MWh
                       </span>
                     </div>
                   </div>
@@ -2182,25 +2619,13 @@ const OperatorView = ({ user, supabase }) => {
 // --- MAIN APP COMPONENT ---
 
 export default function App() {
-  const [supabase, setSupabase] = useState(null);
-  const [session, setSession] = useState(null);
-  const [profile, setProfile] = useState(null);
+  const [walletInfo, setWalletInfo] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load Supabase and other libraries from CDN
-    if (document.getElementById("supabase-js")) {
-      if (window.supabase) {
-        const client = window.supabase.createClient(
-          "YOUR_SUPABASE_URL",
-          "YOUR_SUPABASE_ANON_KEY"
-        );
-        setSupabase(client);
-      }
-      return;
-    }
-
+    // Load Leaflet libraries from CDN
     const loadScript = (id, src, onload) => {
+      if (document.getElementById(id)) return;
       const script = document.createElement("script");
       script.id = id;
       script.src = src;
@@ -2220,93 +2645,72 @@ export default function App() {
       () => {
         loadScript(
           "leaflet-heat-js",
-          "https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"
+          "https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js",
+          () => {
+            setLoading(false);
+          }
         );
       }
     );
 
-    loadScript(
-      "supabase-js",
-      "https://cdn.jsdelivr.net/npm/@supabase/supabase-js",
-      () => {
-        if (window.supabase) {
-          const client = window.supabase.createClient(
-            "https://thefenrcadclcnazqqhx.supabase.co",
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoZWZlbnJjYWRjbGNuYXpxcWh4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg2NTQ2NjIsImV4cCI6MjA3NDIzMDY2Mn0.GEmk4iCNu_fKTMENc8kJaWlB9WDlUwTXO9CZeNBqltg"
-          );
-          setSupabase(client);
-        }
+    // Check if wallet was previously connected
+    const savedWallet = localStorage.getItem("fedgrid_wallet");
+    if (savedWallet) {
+      try {
+        const parsedWallet = JSON.parse(savedWallet);
+        setWalletInfo(parsedWallet);
+      } catch (error) {
+        console.error("Error parsing saved wallet:", error);
+        localStorage.removeItem("fedgrid_wallet");
       }
-    );
+    }
   }, []);
 
-  useEffect(() => {
-    if (!supabase) return;
-
-    setLoading(true);
-    // Fetch the initial session
-    const fetchSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      setSession(session);
-      setLoading(false);
+  const handleWalletConnect = (wallet) => {
+    setWalletInfo(wallet);
+    // Save wallet info to localStorage (without sensitive data)
+    const walletToSave = {
+      address: wallet.address,
+      userType: wallet.userType,
+      network: wallet.network,
+      chainId: wallet.chainId,
     };
-    fetchSession();
+    localStorage.setItem("fedgrid_wallet", JSON.stringify(walletToSave));
+  };
 
-    // Listen for auth state changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-
-    return () => subscription.unsubscribe();
-  }, [supabase]);
-
-  useEffect(() => {
-    // Fetch user profile when session changes
-    if (session?.user && supabase) {
-      setLoading(true);
-      const fetchProfile = async () => {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", session.user.id)
-          .single();
-
-        if (error) {
-          console.error("Error fetching profile:", error);
-        } else {
-          setProfile(data);
-        }
-        setLoading(false);
-      };
-      fetchProfile();
-    } else {
-      setProfile(null);
-      setLoading(false);
-    }
-  }, [session, supabase]);
+  const handleWalletDisconnect = () => {
+    setWalletInfo(null);
+    localStorage.removeItem("fedgrid_wallet");
+  };
 
   const renderContent = () => {
     if (loading) {
       return (
         <div className="min-h-screen bg-slate-800 flex items-center justify-center text-white">
-          Loading FedGrid...
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+            <p>Loading FedGrid...</p>
+          </div>
         </div>
       );
     }
 
-    if (!session) {
-      return <AuthView supabase={supabase} />;
+    if (!walletInfo) {
+      return <WalletAuthView onWalletConnect={handleWalletConnect} />;
     }
 
-    if (profile?.role === "operator") {
-      return <OperatorView user={session.user} supabase={supabase} />;
+    if (walletInfo.userType === "operator") {
+      return (
+        <OperatorView
+          walletInfo={walletInfo}
+          onDisconnect={handleWalletDisconnect}
+        />
+      );
     }
 
-    return <UserView user={session.user} supabase={supabase} />;
+    return (
+      <UserView walletInfo={walletInfo} onDisconnect={handleWalletDisconnect} />
+    );
   };
 
   return (
