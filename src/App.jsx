@@ -1796,6 +1796,33 @@ const OperatorView = ({ walletInfo, onDisconnect }) => {
   const [liveData, setLiveData] = useState(null);
   const [previousData, setPreviousData] = useState(null);
   const [insightQueue, setInsightQueue] = useState([]);
+  const [regionalDataLoading, setRegionalDataLoading] = useState(false);
+
+  // Fetch regional data from API on component mount
+  useEffect(() => {
+    const fetchRegionalData = async () => {
+      setRegionalDataLoading(true);
+      try {
+        const response = await fetch("http://127.0.0.1:5000/get-regional-data");
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.regions) {
+          setRegionalData(data.regions);
+        }
+      } catch (error) {
+        console.error("Error fetching regional data:", error);
+        // Keep using initialRegionalData as fallback
+      } finally {
+        setRegionalDataLoading(false);
+      }
+    };
+
+    fetchRegionalData();
+  }, []);
 
   // Comprehensive random operational insights for demonstration
   const randomOperationalInsights = [

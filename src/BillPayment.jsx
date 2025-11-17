@@ -9,27 +9,27 @@ const BillPayment = ({ walletInfo, onPaymentSuccess }) => {
   // Utility company wallet address - your second account for receiving payments
   const UTILITY_WALLET_ADDRESS = "0x6f2558fFf985c3396cBC0218F603E3acfCA09962"; // Your utility account address
 
-  // Generate static bill data for demo
-  const generateBillData = () => {
-    // Simple static bill data - no API needed, instant load
-    setBillData({
-      billId: `BILL-${Date.now()}`,
-      period: "October 2025",
-      consumption: 245.6,
-      rate: 0.0000004, // Ultra-low rate in ETH
-      amount: 0.0001, // Demo-friendly amount
-      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      status: "pending",
-      breakdown: {
-        energyCharges: 0.000078,
-        gridCharges: 0.00001,
-        taxes: 0.000012,
-      },
-    });
+  // Fetch bill data from API
+  const fetchBillData = async () => {
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:5000/get-bill?user_address=${walletInfo.address}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setBillData(data);
+    } catch (err) {
+      console.error("Error fetching bill data:", err);
+      setError("Failed to load bill data. Please try again.");
+    }
   };
 
   useEffect(() => {
-    generateBillData();
+    fetchBillData();
 
     // Load payment history from localStorage
     const savedHistory = localStorage.getItem(

@@ -72,6 +72,34 @@ The system uses Ethereum smart contracts to manage federated learning:
 
 ## System Architecture
 
+### API-Driven Architecture
+
+**Important**: The frontend is fully API-driven with NO static/hardcoded data. All information is fetched dynamically from the Flask backend API.
+
+#### API Endpoints
+
+| Endpoint             | Method | Description                                      |
+| -------------------- | ------ | ------------------------------------------------ |
+| `/get-global-model`  | GET    | Fetch global model weights from blockchain       |
+| `/get-prediction`    | GET    | Get personalized energy predictions (24h/7d/30d) |
+| `/get-regional-data` | GET    | Fetch real-time regional grid metrics            |
+| `/get-bill`          | GET    | Generate electricity bill for user               |
+
+#### Data Flow
+
+```
+User Browser → React Frontend → Flask API → Blockchain/ML Models
+                     ↓
+              Dynamic Data Display
+```
+
+All components fetch live data:
+
+- **BillPayment.jsx**: Fetches bills from `/get-bill` API
+- **ModelDashboard.jsx**: Fetches model weights from `/get-global-model` API
+- **Operator Dashboard**: Fetches regional data from `/get-regional-data` API
+- **User Predictions**: Fetches predictions from `/get-prediction` API
+
 ### Federated Learning Flow
 
 1. **Local Training**: Each prosumer trains a model on their private energy data
@@ -79,7 +107,7 @@ The system uses Ethereum smart contracts to manage federated learning:
 3. **Blockchain Storage**: Weights are stored immutably on Sepolia testnet
 4. **Aggregation**: Operator runs `aggregate.py` to compute federated average
 5. **Global Update**: Aggregated weights are pushed back to the smart contract
-6. **Distribution**: All prosumers retrieve updated global model from blockchain
+6. **Distribution**: All prosumers retrieve updated global model from blockchain via API
 
 ### Data Privacy
 
@@ -87,6 +115,7 @@ The system uses Ethereum smart contracts to manage federated learning:
 - Only model weights (mathematical parameters) are shared
 - Blockchain provides transparency without compromising privacy
 - Each transaction is cryptographically signed and verified
+- API provides personalized predictions without exposing raw data
 
 ## Installation & Setup
 
