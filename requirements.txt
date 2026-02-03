@@ -1,2 +1,10 @@
 flask
 requests
+pandas
+flask_cors
+sklearn
+eth_account
+tensorflow
+numpy
+web3
+matplotlib
