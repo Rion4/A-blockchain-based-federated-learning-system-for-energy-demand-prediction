@@ -1,4 +1,2 @@
-azure-functions
-azure-confidentialledger
-azure-identity
-azure-storage-blob
+flask
+requests
