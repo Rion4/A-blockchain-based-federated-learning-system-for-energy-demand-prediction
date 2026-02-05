@@ -5,6 +5,7 @@ import time
 import random
 import math
 from datetime import datetime, timedelta
+import logging
 
 # --- 1. Configuration (Same as your other scripts) ---
 SEPOLIA_RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/4XOe07lHUIlGXcd2xroEw"
@@ -222,6 +223,9 @@ CONTRACT_ABI = [
 ]
 SCALING_FACTOR = 1000000.0  # Use a float for division
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 # --- 2. Setup Flask App ---
 app = Flask(__name__)
 CORS(app)  # This allows your frontend to make requests to this backend
@@ -233,7 +237,7 @@ contract = w3.eth.contract(address=CONTRACT_ADDRESS, abi=CONTRACT_ABI)
 # --- 4. Create Your API Endpoints ---
 @app.route("/get-global-model", methods=["GET"])
 def get_model_data():
-    print("Request received! Fetching global model from Sepolia...")
+    logging.info("Request received! Fetching global model from Sepolia...")
     try:
         # Call the contract (read-only, so it's fast and free)
         # This returns the list of integers, e.g., [-95, 31858, -62438, ...]
@@ -245,7 +249,7 @@ def get_model_data():
         # Convert the scaled integers back into the real decimal values
         real_weights = [w / SCALING_FACTOR for w in scaled_weights]
         
-        print(f"Data fetched. Returning {len(real_weights)} weights.")
+        logging.info(f"Data fetched. Returning {len(real_weights)} weights.")
         
         # Return the data as JSON
         return jsonify({
@@ -259,7 +263,7 @@ def get_model_data():
         })
 
     except Exception as e:
-        print(f"Error fetching from contract: {e}")
+        logging.error(f"Error fetching from contract: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/get-prediction", methods=["GET"])
@@ -270,7 +274,7 @@ def get_prediction():
     - period: '24h', '7d', '30d' (default: '24h')
     - user_address: wallet address for personalized predictions (optional)
     """
-    print("Request received! Generating energy prediction...")
+    logging.info("Request received! Generating energy prediction...")
     
     try:
         # Get query parameters
@@ -360,11 +364,11 @@ def get_prediction():
             }
         }
         
-        print(f"Generated prediction: {prediction_value:.2f} {unit} for period {period}")
+        logging.info(f"Generated prediction: {prediction_value:.2f} {unit} for period {period}")
         return jsonify(prediction_data)
         
     except Exception as e:
-        print(f"Error generating prediction: {e}")
+        logging.error(f"Error generating prediction: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/get-regional-data", methods=["GET"])
@@ -372,7 +376,7 @@ def get_regional_data():
     """
     Get regional data for operator dashboard with enhanced metrics
     """
-    print("Request received! Fetching enhanced regional data...")
+    logging.info("Request received! Fetching enhanced regional data...")
     
     try:
         region = request.args.get('region', None)
@@ -399,7 +403,7 @@ def get_regional_data():
                 "efficiency": round(94 + random.uniform(-2, 3), 0),
             },
             "north_east_mangaluru": {
-                "name": "North East Mangalore",
+                "name": "North East Mangore",
                 "trends": {
                     "users": 1450 + random.randint(-15, 40),
                     "avgConsumption": round(28.5 + random.uniform(-1.2, 1.8), 1),
@@ -508,11 +512,11 @@ def get_regional_data():
                 "total_regions": len(regional_data)
             }
         
-        print(f"Returned enhanced regional data for {region if region else 'all regions'}")
+        logging.info(f"Returned enhanced regional data for {region if region else 'all regions'}")
         return jsonify(response_data)
         
     except Exception as e:
-        print(f"Error fetching regional data: {e}")
+        logging.error(f"Error fetching regional data: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/get-bill", methods=["GET"])
@@ -522,7 +526,7 @@ def get_bill():
     Query parameters:
     - user_address: wallet address (required)
     """
-    print("Request received! Generating electricity bill...")
+    logging.info("Request received! Generating electricity bill...")
     
     try:
         user_address = request.args.get('user_address')
@@ -574,13 +578,13 @@ def get_bill():
             "timestamp": time.time()
         }
         
-        print(f"Generated bill for {user_address}: {consumption} kWh = {total_amount:.6f} ETH")
+        logging.info(f"Generated bill for {user_address}: {consumption} kWh = {total_amount:.6f} ETH")
         return jsonify(bill_data)
         
     except Exception as e:
-        print(f"Error generating bill: {e}")
+        logging.error(f"Error generating bill: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    print("Starting Flask API server at http://127.0.0.1:5000")
+    logging.info("Starting Flask API server at http://127.0.0.1:5000")
     app.run(debug=True, port=5000) # Runs the web server

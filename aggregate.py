@@ -4,6 +4,7 @@ import numpy as np
 from web3 import Web3
 from eth_account import Account
 import time
+import logging
 
 # --- CONFIGURATION ---
 SEPOLIA_RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/4XOe07lHUIlGXcd2xroEw"
@@ -44,103 +45,106 @@ CONTRACT_ABI = [
     }
 ]
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 def main():
-    print(" Federated Learning Aggregation")
-    print("=" * 40)
+    logging.info(" Federated Learning Aggregation")
+    logging.info("=" * 40)
     
     # Connect to Sepolia
-    print("Connecting to Sepolia testnet...")
+    logging.info("Connecting to Sepolia testnet...")
     w3 = Web3(Web3.HTTPProvider(SEPOLIA_RPC_URL))
     if not w3.is_connected():
-        print(" Connection failed.")
+        logging.error(" Connection failed.")
         return
 
     # Load owner account
     try:
         owner_account = Account.from_key(OWNER_PRIVATE_KEY)
-        print(f" Connected as Owner: {owner_account.address}")
+        logging.info(f" Connected as Owner: {owner_account.address}")
     except Exception as e:
-        print(f" Error loading private key: {e}")
+        logging.error(f" Error loading private key: {e}")
         return
 
     # Connect to contract
     contract = w3.eth.contract(address=w3.to_checksum_address(CONTRACT_ADDRESS), abi=CONTRACT_ABI)
-    print(f" Connected to contract: {CONTRACT_ADDRESS}")
+    logging.info(f" Connected to contract: {CONTRACT_ADDRESS}")
 
     try:
         # --- STEP 1: Fetch Current State ---
-        print(f"\n STEP 1: Fetching Current State")
-        print("-" * 30)
+        logging.info(f"\n STEP 1: Fetching Current State")
+        logging.info("-" * 30)
         
         # Get current global model
         current_global = contract.functions.getGlobalModel().call()
-        print(f" Current Global Model: {len(current_global)} weights")
-        print(f"   First 3 weights: {current_global[:3]}")
+        logging.info(f" Current Global Model: {len(current_global)} weights")
+        logging.info(f"   First 3 weights: {current_global[:3]}")
         
         # Get all participants
         participants = contract.functions.getParticipants().call()
-        print(f" Participants: {len(participants)}")
+        logging.info(f" Participants: {len(participants)}")
         
         if len(participants) == 0:
-            print(" No participants found! Run submit_weights.py first.")
+            logging.warning(" No participants found! Run submit_weights.py first.")
             return
             
         for i, addr in enumerate(participants):
-            print(f"   {i+1}. {addr}")
+            logging.info(f"   {i+1}. {addr}")
 
         # --- STEP 2: Fetch Local Models ---
-        print(f"\n STEP 2: Fetching Local Models")
-        print("-" * 30)
+        logging.info(f"\n STEP 2: Fetching Local Models")
+        logging.info("-" * 30)
         
         all_local_weights = []
         for i, addr in enumerate(participants):
             try:
                 local_weights = contract.functions.getLocalModel(addr).call()
                 all_local_weights.append(local_weights)
-                print(f" Prosumer {i+1}: {len(local_weights)} weights")
-                print(f"   First 3: {local_weights[:3]}")
+                logging.info(f" Prosumer {i+1}: {len(local_weights)} weights")
+                logging.info(f"   First 3: {local_weights[:3]}")
             except Exception as e:
-                print(f" Error fetching weights for {addr}: {e}")
+                logging.error(f" Error fetching weights for {addr}: {e}")
                 return
 
         # --- STEP 3: Federated Averaging ---
-        print(f"\n STEP 3: Federated Averaging")
-        print("-" * 30)
+        logging.info(f"\n STEP 3: Federated Averaging")
+        logging.info("-" * 30)
         
         # Convert to numpy for easy averaging
         weights_array = np.array(all_local_weights, dtype=np.int64)
-        print(f" Shape: {weights_array.shape} (participants x weights)")
+        logging.info(f" Shape: {weights_array.shape} (participants x weights)")
         
         # Calculate federated average
         averaged_weights = np.mean(weights_array, axis=0)
         new_global_weights = averaged_weights.astype(np.int64).tolist()
         
-        print(f" Averaging complete!")
-        print(f" New global weights (first 3): {new_global_weights[:3]}")
+        logging.info(f" Averaging complete!")
+        logging.info(f" New global weights (first 3): {new_global_weights[:3]}")
         
         # Show the difference
         old_avg = np.mean(current_global)
         new_avg = np.mean(new_global_weights)
-        print(f" Average change: {old_avg:.0f} → {new_avg:.0f}")
+        logging.info(f" Average change: {old_avg:.0f} → {new_avg:.0f}")
 
         # --- STEP 4: Update Global Model ---
-        print(f"\n STEP 4: Updating Global Model")
-        print("-" * 30)
+        logging.info(f"\n STEP 4: Updating Global Model")
+        logging.info("-" * 30)
         
         # Check balance
         balance = w3.eth.get_balance(owner_account.address)
         balance_eth = w3.from_wei(balance, 'ether')
-        print(f" Owner balance: {balance_eth:.6f} ETH")
+        logging.info(f" Owner balance: {balance_eth:.6f} ETH")
         
         if balance_eth < 0.001:
-            print(" Insufficient balance for transaction!")
+            logging.warning(" Insufficient balance for transaction!")
             return
         
         # Build transaction
         nonce = w3.eth.get_transaction_count(owner_account.address)
         gas_price = w3.eth.gas_price
         
-        print(f"🔧 Building transaction...")
+        logging.info(f"🔧 Building transaction...")
         transaction = contract.functions.updateGlobalModel(
             new_global_weights
         ).build_transaction({
@@ -155,40 +159,40 @@ def main():
         signed_txn = owner_account.sign_transaction(transaction)
         tx_hash = w3.eth.send_raw_transaction(signed_txn.raw_transaction)
         
-        print(f" Transaction sent: {tx_hash.hex()}")
-        print(" Waiting for confirmation...")
+        logging.info(f" Transaction sent: {tx_hash.hex()}")
+        logging.info(" Waiting for confirmation...")
         
         tx_receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
         
         if tx_receipt.status == 1:
-            print(f" SUCCESS! Global model updated!")
-            print(f" Block: {tx_receipt.blockNumber}")
-            print(f" Gas used: {tx_receipt.gasUsed:,}")
-            print(f" Etherscan: https://sepolia.etherscan.io/tx/{tx_hash.hex()}")
+            logging.info(f" SUCCESS! Global model updated!")
+            logging.info(f" Block: {tx_receipt.blockNumber}")
+            logging.info(f" Gas used: {tx_receipt.gasUsed:,}")
+            logging.info(f" Etherscan: https://sepolia.etherscan.io/tx/{tx_hash.hex()}")
             
             # Verify the update
-            print(f"\n VERIFICATION")
-            print("-" * 15)
+            logging.info(f"\n VERIFICATION")
+            logging.info("-" * 15)
             updated_global = contract.functions.getGlobalModel().call()
-            print(f" Updated global model: {len(updated_global)} weights")
-            print(f"   First 3: {updated_global[:3]}")
+            logging.info(f" Updated global model: {len(updated_global)} weights")
+            logging.info(f"   First 3: {updated_global[:3]}")
             
             if updated_global == new_global_weights:
-                print("Verification successful - models match!")
+                logging.info("Verification successful - models match!")
             else:
-                print("  Warning: Models don't match exactly")
+                logging.warning("  Warning: Models don't match exactly")
                 
         else:
-            print(" Transaction failed!")
+            logging.error(" Transaction failed!")
 
     except Exception as e:
-        print(f" Error: {e}")
+        logging.error(f" Error: {e}")
         return
 
-    print(f"\n FEDERATED LEARNING ROUND COMPLETE!")
-    print("=" * 40)
-    print(" Local models aggregated")
-    print(" Global model updated on blockchain") 
-    print(" Ready for next round of training")
+    logging.info(f"\n FEDERATED LEARNING ROUND COMPLETE!")
+    logging.info("=" * 40)
+    logging.info(" Local models aggregated")
+    logging.info(" Global model updated on blockchain")
+    logging.info(" Ready for next round of training")
 if __name__ == "__main__":
     main()
