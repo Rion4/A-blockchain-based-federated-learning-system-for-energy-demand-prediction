@@ -480,5 +480,5 @@ def get_bill():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    logging.info("Starting Flask API server at http://127.0.0.1:5000")
+    logging.info("API is running!")
     app.run(debug=True, port=5000) # Runs the web server
