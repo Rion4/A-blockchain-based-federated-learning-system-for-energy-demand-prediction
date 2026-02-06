@@ -43,5 +43,8 @@ EXPOSE 5000
 ENV FLASK_APP=api.py
 ENV FLASK_RUN_HOST=0.0.0.0
 
+# Create a test file
+RUN touch test_file.txt
+
 # Start the Flask API server
 CMD ["flask", "run"]
