@@ -1,4 +1,6 @@
-azure-functions
-azure-confidentialledger
-azure-identity
-azure-storage-blob
+flask
+flask_cors
+web3
+numpy
+dotenv
+eth_account

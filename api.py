@@ -7,8 +7,13 @@ import math
 from datetime import datetime, timedelta
 
 # --- 1. Configuration (Same as your other scripts) ---
-SEPOLIA_RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/4XOe07lHUIlGXcd2xroEw"
-CONTRACT_ADDRESS = Web3.to_checksum_address("0x8eaa1ceea2629d42765cbf9032981cef419a2a39")
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SEPOLIA_RPC_URL = os.getenv("SEPOLIA_RPC_URL")
+CONTRACT_ADDRESS = Web3.to_checksum_address(os.getenv("CONTRACT_ADDRESS"))
 CONTRACT_ABI = [
 	{
 		"inputs": [],
@@ -282,62 +287,35 @@ def get_prediction():
         
         # Generate prediction based on period
         if period == '24h':
-            # 24-hour prediction with hourly variation
-            hours = 24
             time_multiplier = 1
-            unit = "kWh"
-            
-            # Simulate daily consumption pattern
-            current_hour = int(time.time() / 3600) % 24
-            daily_pattern = 0.8 + 0.4 * math.sin(2 * math.pi * (current_hour + 6) / 24)  # Peak in evening
-            
+            daily_pattern = 0.8 + 0.4 * math.sin(2 * math.pi * (int(time.time() / 3600) % 24 + 6) / 24)  # Peak in evening
             base_prediction = base_daily * daily_pattern
-            variation = random.uniform(-0.15, 0.15)  # ±15% variation
-            prediction_value = base_prediction * (1 + variation)
-            
+            variation = random.uniform(-0.15, 0.15)
         elif period == '7d':
-            # 7-day prediction
             time_multiplier = 7
-            unit = "kWh"
-            
-            # Weekly pattern (weekends slightly lower)
-            weekday_factor = 1.0
-            weekend_factor = 0.85
-            avg_factor = (weekday_factor * 5 + weekend_factor * 2) / 7
-            
+            avg_factor = (1.0 * 5 + 0.85 * 2) / 7  # Weekday/weekend factor
             base_prediction = base_daily * 7 * avg_factor
-            variation = random.uniform(-0.12, 0.12)  # ±12% variation
-            prediction_value = base_prediction * (1 + variation)
-            
+            variation = random.uniform(-0.12, 0.12)
         elif period == '30d':
-            # 30-day prediction
             time_multiplier = 30
-            unit = "kWh"
-            
-            # Monthly pattern with seasonal adjustment
-            month = int((time.time() / (30 * 24 * 3600)) % 12)
-            seasonal_factors = [1.2, 1.15, 1.0, 0.9, 0.85, 0.9, 1.1, 1.15, 1.0, 0.95, 1.05, 1.15]  # Winter higher
-            seasonal_factor = seasonal_factors[month]
-            
+            seasonal_factors = [1.2, 1.15, 1.0, 0.9, 0.85, 0.9, 1.1, 1.15, 1.0, 0.95, 1.05, 1.15]
+            seasonal_factor = seasonal_factors[int((time.time() / (30 * 24 * 3600)) % 12)]
             base_prediction = base_daily * 30 * seasonal_factor
-            variation = random.uniform(-0.10, 0.10)  # ±10% variation
-            prediction_value = base_prediction * (1 + variation)
-            
+            variation = random.uniform(-0.10, 0.10)
         else:
             return jsonify({"error": "Invalid period. Use '24h', '7d', or '30d'"}), 400
+
+        prediction_value = base_prediction * (1 + variation)
+        unit = "kWh"
         
-        # Add user-specific adjustments if address provided
         if user_address:
-            # Simple hash-based personalization (consistent for same address)
             address_hash = hash(user_address) % 1000
             personal_factor = 0.8 + (address_hash / 1000) * 0.4  # 0.8 to 1.2 multiplier
             prediction_value *= personal_factor
         
-        # Calculate confidence and accuracy metrics
         confidence = random.uniform(85, 95)
         accuracy_score = random.uniform(88, 96)
-        
-        # Generate supporting data
+
         prediction_data = {
             "timestamp": time.time(),
             "period": period,
