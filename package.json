@@ -10,14 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.57.4",
-    "chart.js": "^4.5.0",
-    "ethers": "^6.15.0",
-    "leaflet": "^1.9.4",
+    "@supabase/supabase-js": "latest",
+    "chart.js": "latest",
+    "ethers": "latest",
+    "leaflet": "latest",
     "leaflet.heat": "^0.2.0",
-    "react": "^19.1.1",
+    "react": "latest",
     "react-chartjs-2": "^5.3.0",
-    "react-dom": "^19.1.1"
+    "react-dom": "latest"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",

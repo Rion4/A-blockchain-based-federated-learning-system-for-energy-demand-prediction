@@ -4,6 +4,8 @@ import ChatBot from "./chatbot";
 import WalletConnect from "./WalletConnect";
 import BillPayment from "./BillPayment";
 // Supabase import is removed and will be loaded from a CDN.
+import L from 'leaflet';
+import 'leaflet.heat';
 
 // --- PREDICTION DATA SERVICE ---
 const fetchLatestPrediction = async () => {
@@ -923,16 +925,10 @@ const ProductionChart = () => {
 
 // --- LEAFLET HEATMAP COMPONENT ---
 
-const HeatmapComponent = ({ regionalData, liveData }) => {
-  const mapRef = useRef(null);
-  const mapInstance = useRef(null);
-  const heatLayerRef = useRef(null);
-  const [currentZoom, setCurrentZoom] = useState(11);
+  useEffect(() => {
+    // Load Leaflet libraries from CDN
+    
 
-  const updateHeatmapData = (zoomLevel) => {
-    if (!mapInstance.current || !window.L) return;
-
-    // Remove existing heat layer
     if (heatLayerRef.current) {
       mapInstance.current.removeLayer(heatLayerRef.current);
     }
@@ -2675,24 +2671,9 @@ export default function App() {
           "https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js",
           () => {
             setLoading(false);
-          }
-        );
-      }
-    );
-
-    // Check if wallet was previously connected
-    const savedWallet = localStorage.getItem("fedgrid_wallet");
-    if (savedWallet) {
-      try {
-        const parsedWallet = JSON.parse(savedWallet);
-        setWalletInfo(parsedWallet);
-      } catch (error) {
-        console.error("Error parsing saved wallet:", error);
-        localStorage.removeItem("fedgrid_wallet");
-      }
-    }
   }, []);
 
+  // Update heatmap when data changes
   const handleWalletConnect = (wallet) => {
     setWalletInfo(wallet);
     // Save wallet info to localStorage (without sensitive data)

@@ -6,11 +6,9 @@ from eth_account import Account
 import time
 
 # --- CONFIGURATION ---
-SEPOLIA_RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/4XOe07lHUIlGXcd2xroEw"
-CONTRACT_ADDRESS = "0x8eaa1ceea2629d42765cbf9032981cef419a2a39"
-
-# Owner's private key (must be the contract owner to call updateGlobalModel)
-OWNER_PRIVATE_KEY = "0x70e6397afcf08eca3a9ba76d77e4f3a755f977adc7e697c7660101bcc7a0bc25"
+SEPOLIA_RPC_URL = os.environ.get("SEPOLIA_RPC_URL")
+CONTRACT_ADDRESS = os.environ.get("CONTRACT_ADDRESS")
+OWNER_PRIVATE_KEY = os.environ.get("OWNER_PRIVATE_KEY")
 
 # Contract ABI (minimal - just what we need for aggregation)
 CONTRACT_ABI = [
