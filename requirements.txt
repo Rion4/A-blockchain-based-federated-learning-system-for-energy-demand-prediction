@@ -1,4 +1,5 @@
-azure-functions
-azure-confidentialledger
-azure-identity
-azure-storage-blob
+Flask==2.3.2
+Flask-Cors==3.0.10
+web3==6.13.0
+numpy==1.23.5
+eth-account==0.11.0

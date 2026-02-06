@@ -1,3 +1,4 @@
+import os
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from web3 import Web3
@@ -5,10 +6,15 @@ import time
 import random
 import math
 from datetime import datetime, timedelta
+import logging
+
+# --- Logging setup ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- 1. Configuration (Same as your other scripts) ---
-SEPOLIA_RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/4XOe07lHUIlGXcd2xroEw"
-CONTRACT_ADDRESS = Web3.to_checksum_address("0x8eaa1ceea2629d42765cbf9032981cef419a2a39")
+SEPOLIA_RPC_URL = os.environ.get("SEPOLIA_RPC_URL")
+CONTRACT_ADDRESS_ENV = os.environ.get("CONTRACT_ADDRESS", "0x0000000000000000000000000000000000000000")
+CONTRACT_ADDRESS = Web3.to_checksum_address(CONTRACT_ADDRESS_ENV)
 CONTRACT_ABI = [
 	{
 		"inputs": [],
@@ -233,7 +239,7 @@ contract = w3.eth.contract(address=CONTRACT_ADDRESS, abi=CONTRACT_ABI)
 # --- 4. Create Your API Endpoints ---
 @app.route("/get-global-model", methods=["GET"])
 def get_model_data():
-    print("Request received! Fetching global model from Sepolia...")
+    logging.info("Request received! Fetching global model from Sepolia...")
     try:
         # Call the contract (read-only, so it's fast and free)
         # This returns the list of integers, e.g., [-95, 31858, -62438, ...]
@@ -245,7 +251,7 @@ def get_model_data():
         # Convert the scaled integers back into the real decimal values
         real_weights = [w / SCALING_FACTOR for w in scaled_weights]
         
-        print(f"Data fetched. Returning {len(real_weights)} weights.")
+        logging.info(f"Data fetched. Returning {len(real_weights)} weights.")
         
         # Return the data as JSON
         return jsonify({
@@ -259,8 +265,14 @@ def get_model_data():
         })
 
     except Exception as e:
-        print(f"Error fetching from contract: {e}")
+        logging.error(f"Error fetching from contract: {e}")
         return jsonify({"error": str(e)}), 500
+
+PERIOD_PARAMS = {
+    '24h': {"hours": 24, "time_multiplier": 1, "unit": "kWh", "daily_pattern": lambda hour: 0.8 + 0.4 * math.sin(2 * math.pi * (hour + 6) / 24), "variation": 0.15},
+    '7d': {"time_multiplier": 7, "unit": "kWh", "weekday_factor": 1.0, "weekend_factor": 0.85, "avg_factor": lambda wf, we: (wf * 5 + we * 2) / 7, "variation": 0.12},
+    '30d': {"time_multiplier": 30, "unit": "kWh", "seasonal_factors": [1.2, 1.15, 1.0, 0.9, 0.85, 0.9, 1.1, 1.15, 1.0, 0.95, 1.05, 1.15], "variation": 0.10}
+}
 
 @app.route("/get-prediction", methods=["GET"])
 def get_prediction():
@@ -270,61 +282,34 @@ def get_prediction():
     - period: '24h', '7d', '30d' (default: '24h')
     - user_address: wallet address for personalized predictions (optional)
     """
-    print("Request received! Generating energy prediction...")
+    logging.info("Request received! Generating energy prediction...")
     
     try:
         # Get query parameters
         period = request.args.get('period', '24h')
         user_address = request.args.get('user_address', None)
         
-        # Base consumption patterns (kWh)
+        # Validate period
+        if period not in PERIOD_PARAMS:
+            return jsonify({"error": "Invalid period. Use '24h', '7d', or '30d'"}), 400
+        
+        params = PERIOD_PARAMS[period]
         base_daily = 35.0  # Base daily consumption
         
-        # Generate prediction based on period
         if period == '24h':
-            # 24-hour prediction with hourly variation
-            hours = 24
-            time_multiplier = 1
-            unit = "kWh"
-            
-            # Simulate daily consumption pattern
             current_hour = int(time.time() / 3600) % 24
-            daily_pattern = 0.8 + 0.4 * math.sin(2 * math.pi * (current_hour + 6) / 24)  # Peak in evening
-            
+            daily_pattern = params["daily_pattern"](current_hour)
             base_prediction = base_daily * daily_pattern
-            variation = random.uniform(-0.15, 0.15)  # ±15% variation
-            prediction_value = base_prediction * (1 + variation)
-            
         elif period == '7d':
-            # 7-day prediction
-            time_multiplier = 7
-            unit = "kWh"
-            
-            # Weekly pattern (weekends slightly lower)
-            weekday_factor = 1.0
-            weekend_factor = 0.85
-            avg_factor = (weekday_factor * 5 + weekend_factor * 2) / 7
-            
+            avg_factor = params["avg_factor"](params["weekday_factor"], params["weekend_factor"])
             base_prediction = base_daily * 7 * avg_factor
-            variation = random.uniform(-0.12, 0.12)  # ±12% variation
-            prediction_value = base_prediction * (1 + variation)
-            
         elif period == '30d':
-            # 30-day prediction
-            time_multiplier = 30
-            unit = "kWh"
-            
-            # Monthly pattern with seasonal adjustment
             month = int((time.time() / (30 * 24 * 3600)) % 12)
-            seasonal_factors = [1.2, 1.15, 1.0, 0.9, 0.85, 0.9, 1.1, 1.15, 1.0, 0.95, 1.05, 1.15]  # Winter higher
-            seasonal_factor = seasonal_factors[month]
-            
+            seasonal_factor = params["seasonal_factors"][month]
             base_prediction = base_daily * 30 * seasonal_factor
-            variation = random.uniform(-0.10, 0.10)  # ±10% variation
-            prediction_value = base_prediction * (1 + variation)
             
-        else:
-            return jsonify({"error": "Invalid period. Use '24h', '7d', or '30d'"}), 400
+        variation = random.uniform(-params["variation"], params["variation"])
+        prediction_value = base_prediction * (1 + variation)
         
         # Add user-specific adjustments if address provided
         if user_address:
@@ -343,13 +328,13 @@ def get_prediction():
             "period": period,
             "prediction": {
                 "value": round(prediction_value, 2),
-                "unit": unit,
+                "unit": params["unit"],
                 "confidence": round(confidence, 1),
                 "accuracy_score": round(accuracy_score, 1)
             },
             "metadata": {
                 "base_consumption": round(base_daily, 2),
-                "time_multiplier": time_multiplier,
+                "time_multiplier": params["time_multiplier"],
                 "user_personalized": user_address is not None,
                 "model_version": "2.1.3"
             },
@@ -360,139 +345,52 @@ def get_prediction():
             }
         }
         
-        print(f"Generated prediction: {prediction_value:.2f} {unit} for period {period}")
+        logging.info(f"Generated prediction: {prediction_value:.2f} {params["unit"]} for period {period}")
         return jsonify(prediction_data)
         
     except Exception as e:
-        print(f"Error generating prediction: {e}")
+        logging.error(f"Error generating prediction: {e}")
         return jsonify({"error": str(e)}), 500
+
+def generate_regional_data(name, users, avgConsumption, peakLoad, gridStability, carbonIntensity, newProsumers, consumptionTrend, peakTime, day, week, month, efficiency):
+    return {
+        "name": name,
+        "trends": {
+            "users": users + random.randint(-20, 50),
+            "avgConsumption": round(avgConsumption + random.uniform(-1.5, 2.0), 1),
+            "peakLoad": round(peakLoad * 1.2 + random.uniform(-2, 3), 1),
+            "gridStability": round(gridStability + random.uniform(-0.5, 0.2), 1),
+            "carbonIntensity": round(carbonIntensity + random.uniform(-0.05, 0.03), 2),
+            "newProsumers": random.randint(35, 55),
+            "consumptionTrend": round(random.uniform(1.5, 3.5), 1),
+            "peakTime": peakTime
+        },
+        "forecasts": {
+            "day": {"value": round(day + random.uniform(-3, 3), 1), "unit": "MWh"},
+            "week": {"value": round(week + random.uniform(-20, 20), 1), "unit": "MWh"},
+            "month": {"value": round(month + random.uniform(-0.1, 0.1), 2), "unit": "GWh"},
+        },
+        "efficiency": round(efficiency + random.uniform(-2, 3), 0),
+    }
 
 @app.route("/get-regional-data", methods=["GET"])
 def get_regional_data():
     """
     Get regional data for operator dashboard with enhanced metrics
     """
-    print("Request received! Fetching enhanced regional data...")
+    logging.info("Request received! Fetching enhanced regional data...")
     
     try:
         region = request.args.get('region', None)
         
         # Enhanced regional data with additional metrics
         regional_data = {
-            "north_mangaluru": {
-                "name": "North Mangalore",
-                "trends": {
-                    "users": 1850 + random.randint(-20, 50),
-                    "avgConsumption": round(29.1 + random.uniform(-1.5, 2.0), 1),
-                    "peakLoad": round(53.8 * 1.2 + random.uniform(-2, 3), 1),
-                    "gridStability": round(99.7 + random.uniform(-0.5, 0.2), 1),
-                    "carbonIntensity": round(0.42 + random.uniform(-0.05, 0.03), 2),
-                    "newProsumers": random.randint(35, 55),
-                    "consumptionTrend": round(random.uniform(1.5, 3.5), 1),
-                    "peakTime": "7:30 PM"
-                },
-                "forecasts": {
-                    "day": {"value": round(53.8 + random.uniform(-3, 3), 1), "unit": "MWh"},
-                    "week": {"value": round(376.6 + random.uniform(-20, 20), 1), "unit": "MWh"},
-                    "month": {"value": round(1.6 + random.uniform(-0.1, 0.1), 2), "unit": "GWh"},
-                },
-                "efficiency": round(94 + random.uniform(-2, 3), 0),
-            },
-            "north_east_mangaluru": {
-                "name": "North East Mangalore",
-                "trends": {
-                    "users": 1450 + random.randint(-15, 40),
-                    "avgConsumption": round(28.5 + random.uniform(-1.2, 1.8), 1),
-                    "peakLoad": round(41.3 * 1.2 + random.uniform(-2, 3), 1),
-                    "gridStability": round(99.5 + random.uniform(-0.3, 0.2), 1),
-                    "carbonIntensity": round(0.44 + random.uniform(-0.04, 0.02), 2),
-                    "newProsumers": random.randint(25, 45),
-                    "consumptionTrend": round(random.uniform(1.8, 3.2), 1),
-                    "peakTime": "7:45 PM"
-                },
-                "forecasts": {
-                    "day": {"value": round(41.3 + random.uniform(-2.5, 2.5), 1), "unit": "MWh"},
-                    "week": {"value": round(289.1 + random.uniform(-15, 15), 1), "unit": "MWh"},
-                    "month": {"value": round(1.2 + random.uniform(-0.08, 0.08), 2), "unit": "GWh"},
-                },
-                "efficiency": round(92 + random.uniform(-2, 3), 0),
-            },
-            "east_mangaluru": {
-                "name": "East Mangalore",
-                "trends": {
-                    "users": 1675 + random.randint(-18, 42),
-                    "avgConsumption": round(30.5 + random.uniform(-1.4, 2.1), 1),
-                    "peakLoad": round(51.1 * 1.2 + random.uniform(-2.5, 3.5), 1),
-                    "gridStability": round(99.6 + random.uniform(-0.4, 0.2), 1),
-                    "carbonIntensity": round(0.41 + random.uniform(-0.03, 0.04), 2),
-                    "newProsumers": random.randint(30, 50),
-                    "consumptionTrend": round(random.uniform(2.0, 3.8), 1),
-                    "peakTime": "7:15 PM"
-                },
-                "forecasts": {
-                    "day": {"value": round(51.1 + random.uniform(-3, 3), 1), "unit": "MWh"},
-                    "week": {"value": round(357.7 + random.uniform(-18, 18), 1), "unit": "MWh"},
-                    "month": {"value": round(1.5 + random.uniform(-0.09, 0.09), 2), "unit": "GWh"},
-                },
-                "efficiency": round(91 + random.uniform(-2, 4), 0),
-            },
-            "south_east_mangaluru": {
-                "name": "South East Mangalore",
-                "trends": {
-                    "users": 2105 + random.randint(-25, 60),
-                    "avgConsumption": round(31.2 + random.uniform(-1.6, 2.3), 1),
-                    "peakLoad": round(65.7 * 1.2 + random.uniform(-3, 4), 1),
-                    "gridStability": round(99.4 + random.uniform(-0.3, 0.3), 1),
-                    "carbonIntensity": round(0.43 + random.uniform(-0.04, 0.03), 2),
-                    "newProsumers": random.randint(40, 65),
-                    "consumptionTrend": round(random.uniform(1.9, 3.6), 1),
-                    "peakTime": "8:00 PM"
-                },
-                "forecasts": {
-                    "day": {"value": round(65.7 + random.uniform(-3.5, 3.5), 1), "unit": "MWh"},
-                    "week": {"value": round(460.0 + random.uniform(-23, 23), 1), "unit": "MWh"},
-                    "month": {"value": round(1.9 + random.uniform(-0.1, 0.1), 2), "unit": "GWh"},
-                },
-                "efficiency": round(88 + random.uniform(-2, 5), 0),
-            },
-            "south_mangaluru": {
-                "name": "South Mangalore",
-                "trends": {
-                    "users": 1950 + random.randint(-22, 55),
-                    "avgConsumption": round(32.8 + random.uniform(-1.7, 2.4), 1),
-                    "peakLoad": round(64.0 * 1.2 + random.uniform(-3, 4), 1),
-                    "gridStability": round(99.3 + random.uniform(-0.4, 0.4), 1),
-                    "carbonIntensity": round(0.45 + random.uniform(-0.05, 0.02), 2),
-                    "newProsumers": random.randint(35, 58),
-                    "consumptionTrend": round(random.uniform(2.1, 3.9), 1),
-                    "peakTime": "7:45 PM"
-                },
-                "forecasts": {
-                    "day": {"value": round(64.0 + random.uniform(-3.2, 3.2), 1), "unit": "MWh"},
-                    "week": {"value": round(448.0 + random.uniform(-22, 22), 1), "unit": "MWh"},
-                    "month": {"value": round(1.8 + random.uniform(-0.09, 0.09), 2), "unit": "GWh"},
-                },
-                "efficiency": round(89 + random.uniform(-2, 4), 0),
-            },
-            "west_mangaluru": {
-                "name": "West Mangalore",
-                "trends": {
-                    "users": 2350 + random.randint(-28, 70),
-                    "avgConsumption": round(27.8 + random.uniform(-1.3, 1.9), 1),
-                    "peakLoad": round(65.3 * 1.2 + random.uniform(-3.2, 4.2), 1),
-                    "gridStability": round(99.8 + random.uniform(-0.2, 0.1), 1),
-                    "carbonIntensity": round(0.39 + random.uniform(-0.03, 0.05), 2),
-                    "newProsumers": random.randint(45, 70),
-                    "consumptionTrend": round(random.uniform(2.2, 4.1), 1),
-                    "peakTime": "7:20 PM"
-                },
-                "forecasts": {
-                    "day": {"value": round(65.3 + random.uniform(-3.3, 3.3), 1), "unit": "MWh"},
-                    "week": {"value": round(457.1 + random.uniform(-23, 23), 1), "unit": "MWh"},
-                    "month": {"value": round(2.0 + random.uniform(-0.1, 0.1), 2), "unit": "GWh"},
-                },
-                "efficiency": round(95 + random.uniform(-1, 2), 0),
-            },
+            "north_mangaluru": generate_regional_data("North Mangalore", 1850, 29.1, 53.8, 99.7, 0.42, 35, 1.5, "7:30 PM", 53.8, 376.6, 1.6, 94),
+            "north_east_mangaluru": generate_regional_data("North East Mangalore", 1450, 28.5, 41.3, 99.5, 0.44, 25, 1.8, "7:45 PM", 41.3, 289.1, 1.2, 92),
+            "east_mangaluru": generate_regional_data("East Mangalore", 1675, 30.5, 51.1, 99.6, 0.41, 30, 2.0, "7:15 PM", 51.1, 357.7, 1.5, 91),
+            "south_east_mangaluru": generate_regional_data("South East Mangalore", 2105, 31.2, 65.7, 99.4, 0.43, 40, 1.9, "8:00 PM", 65.7, 460.0, 1.9, 88),
+            "south_mangaluru": generate_regional_data("South Mangalore", 1950, 32.8, 64.0, 99.3, 0.45, 35, 2.1, "7:45 PM", 64.0, 448.0, 1.8, 89),
+            "west_mangaluru": generate_regional_data("West Mangalore", 2350, 27.8, 65.3, 99.8, 0.39, 45, 2.2, "7:20 PM", 65.3, 457.1, 2.0, 95),
         }
         
         if region and region in regional_data:
@@ -508,11 +406,11 @@ def get_regional_data():
                 "total_regions": len(regional_data)
             }
         
-        print(f"Returned enhanced regional data for {region if region else 'all regions'}")
+        logging.info(f"Returned enhanced regional data for {region if region else 'all regions'}")
         return jsonify(response_data)
         
     except Exception as e:
-        print(f"Error fetching regional data: {e}")
+        logging.error(f"Error fetching regional data: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/get-bill", methods=["GET"])
@@ -522,7 +420,7 @@ def get_bill():
     Query parameters:
     - user_address: wallet address (required)
     """
-    print("Request received! Generating electricity bill...")
+    logging.info("Request received! Generating electricity bill...")
     
     try:
         user_address = request.args.get('user_address')
@@ -574,13 +472,13 @@ def get_bill():
             "timestamp": time.time()
         }
         
-        print(f"Generated bill for {user_address}: {consumption} kWh = {total_amount:.6f} ETH")
+        logging.info(f"Generated bill for {user_address}: {consumption} kWh = {total_amount:.6f} ETH")
         return jsonify(bill_data)
         
     except Exception as e:
-        print(f"Error generating bill: {e}")
+        logging.error(f"Error generating bill: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    print("Starting Flask API server at http://127.0.0.1:5000")
+    logging.info("Starting Flask API server at http://127.0.0.1:5000")
     app.run(debug=True, port=5000) # Runs the web server
