@@ -1,0 +1,8 @@
+Flask==3.0.3
+Flask-Cors==4.0.1
+web3==6.19.0
+pandas==2.2.3
+scikit-learn==1.3.2
+tensorflow==2.15.0
+numpy==1.26.4
+eth-account==0.9.0

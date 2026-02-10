@@ -1,14 +1,22 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from web3 import Web3
-import time
-import random
+import os
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 import math
 from datetime import datetime, timedelta
 
 # --- 1. Configuration (Same as your other scripts) ---
-SEPOLIA_RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/4XOe07lHUIlGXcd2xroEw"
-CONTRACT_ADDRESS = Web3.to_checksum_address("0x8eaa1ceea2629d42765cbf9032981cef419a2a39")
+SEPOLIA_RPC_URL_ENV = os.environ.get("SEPOLIA_RPC_URL")
+if not SEPOLIA_RPC_URL_ENV:
+    raise ValueError("SEPOLIA_RPC_URL environment variable not set.")
+SEPOLIA_RPC_URL = SEPOLIA_RPC_URL_ENV
+CONTRACT_ADDRESS_ENV = os.environ.get("CONTRACT_ADDRESS")
+if not CONTRACT_ADDRESS_ENV:
+    raise ValueError("CONTRACT_ADDRESS environment variable not set.")
+CONTRACT_ADDRESS = Web3.to_checksum_address(CONTRACT_ADDRESS_ENV)
 CONTRACT_ABI = [
 	{
 		"inputs": [],
@@ -233,7 +241,7 @@ contract = w3.eth.contract(address=CONTRACT_ADDRESS, abi=CONTRACT_ABI)
 # --- 4. Create Your API Endpoints ---
 @app.route("/get-global-model", methods=["GET"])
 def get_model_data():
-    print("Request received! Fetching global model from Sepolia...")
+    logging.info("Request received! Fetching global model from Sepolia...")
     try:
         # Call the contract (read-only, so it's fast and free)
         # This returns the list of integers, e.g., [-95, 31858, -62438, ...]
@@ -245,7 +253,7 @@ def get_model_data():
         # Convert the scaled integers back into the real decimal values
         real_weights = [w / SCALING_FACTOR for w in scaled_weights]
         
-        print(f"Data fetched. Returning {len(real_weights)} weights.")
+        logging.info(f"Data fetched. Returning {len(real_weights)} weights.")
         
         # Return the data as JSON
         return jsonify({
@@ -259,7 +267,7 @@ def get_model_data():
         })
 
     except Exception as e:
-        print(f"Error fetching from contract: {e}")
+        logging.error(f"Error fetching from contract: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/get-prediction", methods=["GET"])
@@ -270,7 +278,7 @@ def get_prediction():
     - period: '24h', '7d', '30d' (default: '24h')
     - user_address: wallet address for personalized predictions (optional)
     """
-    print("Request received! Generating energy prediction...")
+    logging.info("Request received! Generating energy prediction...")
     
     try:
         # Get query parameters
@@ -281,51 +289,20 @@ def get_prediction():
         base_daily = 35.0  # Base daily consumption
         
         # Generate prediction based on period
-        if period == '24h':
-            # 24-hour prediction with hourly variation
-            hours = 24
-            time_multiplier = 1
-            unit = "kWh"
-            
-            # Simulate daily consumption pattern
-            current_hour = int(time.time() / 3600) % 24
-            daily_pattern = 0.8 + 0.4 * math.sin(2 * math.pi * (current_hour + 6) / 24)  # Peak in evening
-            
-            base_prediction = base_daily * daily_pattern
-            variation = random.uniform(-0.15, 0.15)  # ±15% variation
-            prediction_value = base_prediction * (1 + variation)
-            
-        elif period == '7d':
-            # 7-day prediction
-            time_multiplier = 7
-            unit = "kWh"
-            
-            # Weekly pattern (weekends slightly lower)
-            weekday_factor = 1.0
-            weekend_factor = 0.85
-            avg_factor = (weekday_factor * 5 + weekend_factor * 2) / 7
-            
-            base_prediction = base_daily * 7 * avg_factor
-            variation = random.uniform(-0.12, 0.12)  # ±12% variation
-            prediction_value = base_prediction * (1 + variation)
-            
-        elif period == '30d':
-            # 30-day prediction
-            time_multiplier = 30
-            unit = "kWh"
-            
-            # Monthly pattern with seasonal adjustment
-            month = int((time.time() / (30 * 24 * 3600)) % 12)
-            seasonal_factors = [1.2, 1.15, 1.0, 0.9, 0.85, 0.9, 1.1, 1.15, 1.0, 0.95, 1.05, 1.15]  # Winter higher
-            seasonal_factor = seasonal_factors[month]
-            
-            base_prediction = base_daily * 30 * seasonal_factor
-            variation = random.uniform(-0.10, 0.10)  # ±10% variation
-            prediction_value = base_prediction * (1 + variation)
-            
-        else:
+        periods = {
+            '24h': {'hours': 24, 'time_multiplier': 1, 'unit': "kWh"},
+            '7d': {'time_multiplier': 7, 'unit': "kWh"},
+            '30d': {'time_multiplier': 30, 'unit': "kWh"}
+        }
+
+        period_data = periods.get(period)
+        if not period_data:
             return jsonify({"error": "Invalid period. Use '24h', '7d', or '30d'"}), 400
-        
+
+        time_multiplier = period_data.get('time_multiplier')
+        unit = period_data.get('unit')
+        hours = period_data.get('hours', 24) # Default to 24 for '24h'
+
         # Add user-specific adjustments if address provided
         if user_address:
             # Simple hash-based personalization (consistent for same address)
@@ -360,11 +337,11 @@ def get_prediction():
             }
         }
         
-        print(f"Generated prediction: {prediction_value:.2f} {unit} for period {period}")
+        logging.info(f"Generated prediction: {prediction_value:.2f} {unit} for period {period}")
         return jsonify(prediction_data)
         
     except Exception as e:
-        print(f"Error generating prediction: {e}")
+        logging.error(f"Error generating prediction: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/get-regional-data", methods=["GET"])
@@ -372,7 +349,7 @@ def get_regional_data():
     """
     Get regional data for operator dashboard with enhanced metrics
     """
-    print("Request received! Fetching enhanced regional data...")
+    logging.info("Request received! Fetching enhanced regional data...")
     
     try:
         region = request.args.get('region', None)
@@ -508,11 +485,11 @@ def get_regional_data():
                 "total_regions": len(regional_data)
             }
         
-        print(f"Returned enhanced regional data for {region if region else 'all regions'}")
+        logging.info(f"Returned enhanced regional data for {region if region else 'all regions'}")
         return jsonify(response_data)
         
     except Exception as e:
-        print(f"Error fetching regional data: {e}")
+        logging.error(f"Error fetching regional data: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/get-bill", methods=["GET"])
@@ -522,7 +499,7 @@ def get_bill():
     Query parameters:
     - user_address: wallet address (required)
     """
-    print("Request received! Generating electricity bill...")
+    logging.info("Request received! Generating electricity bill...")
     
     try:
         user_address = request.args.get('user_address')
@@ -574,13 +551,13 @@ def get_bill():
             "timestamp": time.time()
         }
         
-        print(f"Generated bill for {user_address}: {consumption} kWh = {total_amount:.6f} ETH")
+        logging.info(f"Generated bill for {user_address}: {consumption} kWh = {total_amount:.6f} ETH")
         return jsonify(bill_data)
         
     except Exception as e:
-        print(f"Error generating bill: {e}")
+        logging.error(f"Error generating bill: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    print("Starting Flask API server at http://127.0.0.1:5000")
+    logging.info("Starting Flask API server at http://127.0.0.1:5000")
     app.run(debug=True, port=5000) # Runs the web server
