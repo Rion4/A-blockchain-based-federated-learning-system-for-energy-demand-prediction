@@ -1,4 +1,13 @@
-azure-functions
-azure-confidentialledger
-azure-identity
-azure-storage-blob
+Flask==3.0.0
+Flask-Cors==4.0.0
+web3==6.13.0
+numpy==1.26.4
+pandas==2.2.1
+scikit-learn==1.4.1
+tensorflow==2.15.0
+matplotlib==3.8.3
+python-dotenv==1.0.1
+
+# Consider using a virtual environment for managing dependencies:
+# python3 -m venv venv
+# source venv/bin/activate
